@@ -166,6 +166,7 @@ textarea.inp{min-height:80px;resize:vertical}
 .photo button{position:absolute;top:4px;right:4px;width:26px;height:26px;border-radius:50%;border:0;background:rgba(0,0,0,.6);color:#fff;cursor:pointer;font-size:14px;line-height:1}
 .addphoto{width:96px;height:96px;border:1px dashed var(--line);border-radius:8px;display:flex;align-items:center;justify-content:center;flex-direction:column;font-size:12px;color:var(--muted);cursor:pointer;text-align:center;padding:6px}
 .addphoto:hover{border-color:var(--accent);color:var(--accent)}
+.addphoto.cam{border-style:solid;border-color:var(--accent);color:var(--accent);background:var(--accent-soft);font-weight:500;gap:4px}
 .codebox{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:12px 14px;border-radius:8px;background:var(--accent-soft)}
 .codebox span{font-size:28px;letter-spacing:.02em;font-weight:500;overflow-wrap:anywhere}
 .item .t.code{font-family:var(--font-mono);font-size:17px;font-weight:500}
@@ -848,7 +849,7 @@ function renderSheetPhotos(){
     const fid=el.dataset.photos;const ids=sh.data[fid]||[];
     const can=S.assets&&!readOnly();
     el.innerHTML=ids.map(id=>`<div class="photo"><img data-photo="${esc(id)}" alt="Photo"><button type="button" data-rmphoto="${esc(id)}" data-field="${fid}" aria-label="Remove photo" ${can?'':'hidden'}>×</button></div>`).join('')+
-      (can?`<label class="addphoto" for="up-${fid}">${sh.uploading?'Uploading…':'+ Add photos'}<input id="up-${fid}" type="file" accept="image/*" multiple hidden data-upload="${fid}"></label>`:(ids.length?'':`<span class="hint">${'Photos can be added once you are signed in.'}</span>`));
+      (can?(sh.uploading?`<span class="addphoto">Uploading…</span>`:`<label class="addphoto cam" for="cam-${fid}"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>Take photo<input id="cam-${fid}" type="file" accept="image/*" capture="environment" hidden data-upload="${fid}"></label><label class="addphoto" for="up-${fid}">From gallery<input id="up-${fid}" type="file" accept="image/*" multiple hidden data-upload="${fid}"></label>`):(ids.length?'':`<span class="hint">${'Photos can be added once you are signed in.'}</span>`));
   });
 }
 async function compress(file){

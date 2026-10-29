@@ -12,6 +12,10 @@ Each client project runs through five phases, each with a standard checklist the
 | 4. Remediation and retrofit | Options register (cost, priority, status) and costing |
 | 5. Monitoring and aftercare | Ongoing results, field readings and samples |
 
+Every checklist task opens its own questionnaire. Questions marked **Required** must be answered before the task can be ticked off, and calculated values (sample totals, cost estimate, SVI, F/M, DAF removal, water balance, compliance rate) update as you type.
+
+In the Proposal phase, the scope and rates tasks build the audit cost lines automatically, the programme task estimates remediation and monitoring, and **Generate proposal (.docx)** produces a formal Word proposal from the pre-audit findings, scope, methodology, programme, fees and whole-programme estimate.
+
 The Overview shows the current phase, checklist progress and every finding, including limit exceedances and measured overloads.
 
 Data is shared live between the team through a free Supabase project, and the app keeps working offline on site.
@@ -75,4 +79,5 @@ On phones, open that address in Safari or Chrome, sign in once, then choose **Ad
 | `config.js` | Your Supabase project address and public key |
 | `schema.sql` | One-time database setup, run in the Supabase SQL Editor |
 | `sw.js` | Keeps the app available offline |
-| `vendor/` | Supabase client 2.45.4 and ExcelJS 4.4.0 |
+| `proposal.js` | Builds the Word proposal |
+| `vendor/` | Supabase client 2.45.4, ExcelJS 4.4.0 and docx 8.5.0 |

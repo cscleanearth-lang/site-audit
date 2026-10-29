@@ -199,6 +199,15 @@ textarea.inp{min-height:80px;resize:vertical}
 .task.done .tt,.task.skip .tt{color:var(--muted);text-decoration:line-through}
 .late{color:var(--bad);font-weight:500}
 .tbl.limits .inp{min-height:34px;padding:6px 8px;max-width:130px}
+.req{font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--warn);background:var(--warn-soft);padding:1px 7px;border-radius:999px;margin-left:6px;vertical-align:middle}
+.q.missing .req{color:var(--bad);background:var(--bad-soft)}
+.linkbox{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:10px 12px;border-radius:8px;background:var(--sunken)}
+.grid-task{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:16px;align-items:start}
+@media (max-width:860px){.grid-task{grid-template-columns:minmax(0,1fr)}}
+.reqbar{display:grid;grid-template-columns:1fr;gap:6px;padding-bottom:12px;font-weight:500}
+#tqs .q:first-of-type{border-top:0}
+.tcalc .computed{margin-top:0}
+.chev{color:var(--muted);font-size:20px;padding:0 2px}
 .confirm{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:14px}
 
 /* audits list */
@@ -208,7 +217,7 @@ textarea.inp{min-height:80px;resize:vertical}
 dl.kv{display:grid;grid-template-columns:max-content 1fr;gap:6px 16px;margin:0}
 dl.kv dt{color:var(--muted)}
 dl.kv dd{margin:0;overflow-wrap:anywhere}
-@media (max-width:520px){.card{padding:14px}.bar{gap:8px}.status{font-size:11px;padding:3px 8px}#switchBtn{padding:6px 10px;min-height:34px}main{padding-block:14px 60px}}
+@media (max-width:520px){.brand{flex:1 1 100%}.auditname{white-space:normal}.card{padding:14px}.bar{gap:8px}.status{font-size:11px;padding:3px 8px}#switchBtn{padding:6px 10px;min-height:34px}main{padding-block:14px 60px}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
 
@@ -251,12 +260,6 @@ const PHASES=[
  {id:'audit',label:'Full audit',short:'Full audit',intro:'Measure flows and loads, sample every stage, test the process and find the root causes.',views:[['tasks','Checklist'],['samples'],['results'],['flows'],['analysis','Analysis']]},
  {id:'remediation',label:'Remediation and retrofit',short:'Remediation',intro:'Choose, design and deliver the fixes, from quick operational wins to new treatment units.',views:[['tasks','Checklist'],['options'],['costing']]},
  {id:'monitoring',label:'Monitoring and aftercare',short:'Monitoring',intro:'Prove the fixes work and keep the plant compliant.',views:[['tasks','Checklist'],['results'],['measurements'],['samples']]}];
-const TEMPLATES={
- pre:['Confirm visit date, attendees and client contacts','Send the information request list to the client','Review documents received (permit, past results, drawings, O&M manual)','Walk the site from water intake to final discharge','Complete every questionnaire section','Record all equipment with nameplate photos','Record all chemicals, doses and storage','Take spot readings (pH, temperature, DO, conductivity)','Close-out meeting: agree next steps and outstanding data','Export the workbook to SharePoint'],
- proposal:['Define audit scope and sampling points','Agree monitoring duration (normally 5–7 days, including CIP and a weekend)','Set the parameter list for each sampling point','Get a quotation from an accredited laboratory','Confirm flow metering (existing meters or hired meters)','Estimate staff days, transport and equipment hire','Complete the costing table','Internal review of scope and price','Submit the proposal to the client','Client approval or purchase order received','Contract signed; site access, PPE and induction confirmed'],
- audit:['Mobilise: induction, permits, equipment calibrated','Install or verify flow meters at inlet and outlet','Plan samples and generate sample codes','Run the composite sampling campaign at every stage','Take grab samples (pH, temperature, FOG, microbiology)','Sample individual sources (CIP rinses, product lines, drains)','Record daily field readings','Process tests: SV30/SVI, microscopy, DAF performance','Jar tests for coagulant and flocculant doses','Water balance from intake to discharge','Asset condition assessment for every unit','Sludge sampling and quantities','Operator interviews and review of logs','Chain of custody completed and samples delivered to the lab','Lab results received, checked and entered','Analysis: loads, removal efficiencies and limit exceedances','Root-cause analysis for each failing parameter','Draft the audit report and review internally','Present findings to the client'],
- remediation:['List and screen remediation options','Estimate capital and running cost for each option','Agree preferred options with the client','Prepare the remediation proposal and costing','Concept and detailed design','Procurement and supplier selection','Installation and civil works','Commissioning and performance testing','Operator training and updated SOPs','Handover documents (drawings, O&M manual, warranties)'],
- monitoring:['Agree the monitoring schedule and parameters','Monthly compliance sampling','Review results against limits each month','Quarterly review meeting with the client','Maintenance and service visits','Annual audit refresher']};
 const phaseOf=id=>PHASES.find(p=>p.id===id);
 const sampleCodes=()=>S.regs.samples.map(x=>x.code).filter(Boolean).sort();
 const sampleByCode=c=>S.regs.samples.find(x=>x.code===c);
@@ -523,6 +526,291 @@ const REGS={
   {id:'photos',label:'Photos',type:'photos'}]}
 };
 const REG_KEYS=Object.keys(REGS);
+/* ---------- detailed task questionnaires ----------
+   Each checklist task opens its own questions. Questions marked req must be answered before the task can be ticked off. */
+const YN2=['Yes','No'];
+const PARAM_LABELS=PARAMS.map(p=>p.label);
+const MICRO=['Faecal coliforms','E. coli'];
+const DONE=['Confirmed'];
+const ta=(ph,key)=>{const t=S.regs.tasks.find(x=>x.phase===ph&&x.key===key);return (t&&t.answers)||{}};
+const n0=v=>num(v)||0;
+const money=x=>x===null||x===undefined||!isFinite(x)?'–':'GHS '+Math.round(x).toLocaleString('en-GB');
+const calcRow=items=>`<div class="computed">${items.map(([v,l])=>`<div><b>${v}</b><span>${l}</span></div>`).join('')}</div>`;
+function scopeNumbers(a){
+  a=a||ta('proposal','scope');const pts=(a.points||[]).length,days=n0(a.days),per=n0(a.comp)+n0(a.grab),src=n0(a.source);
+  const samples=pts*days*per+src;const ps=a.params||[];const micro=ps.filter(p=>MICRO.includes(p)).length;
+  return {pts,days,samples,params:ps.length,micro,chem:ps.length-micro,analyses:samples*ps.length};
+}
+function auditCostLines(){
+  const sc=scopeNumbers(),r=ta('proposal','rates'),a=ta('proposal','scope');const fd=n0(r.field_days)||(sc.days?sc.days+2:0);
+  const L=[];const add=(item,category,qty,unit,rate)=>{if(qty>0&&rate>0)L.push({item,category,qty,unit,rate})};
+  add('Laboratory analysis (chemical parameters)','Laboratory analysis',sc.samples*sc.chem,'analyses',n0(r.lab));
+  add('Laboratory analysis (microbiology)','Laboratory analysis',sc.samples*sc.micro,'analyses',n0(r.micro)||n0(r.lab));
+  add('Field engineers on site','Staff time',n0(r.eng_n)*fd,'person-days',n0(r.eng_rate));
+  add('Field technicians on site','Staff time',n0(r.tech_n)*fd,'person-days',n0(r.tech_rate));
+  add('Data analysis and reporting','Staff time',n0(r.office_days),'days',n0(r.eng_rate));
+  add('Senior engineer review','Staff time',n0(r.senior_days),'days',n0(r.senior_rate));
+  if(a.metering==='Hire portable meters')add('Portable flow meter hire','Equipment hire',n0(a.meters)*fd,'meter-days',n0(r.meter_rate));
+  add('Transport','Transport and logistics',fd,'days',n0(r.transport));
+  add('Sampling consumables, cool boxes and PPE','Materials and consumables',1,'lot',n0(r.consumables));
+  if((a.tests||[]).length)add('Process tests and jar tests','Materials and consumables',1,'lot',n0(r.tests_cost));
+  return L;
+}
+function costSummary(){
+  const r=ta('proposal','rates');const by={};
+  S.regs.costing.forEach(x=>{const amt=costAmount(x);if(amt===null)return;const k=x.phase||'Full audit';by[k]=(by[k]||0)+amt});
+  const out={};let grand=0;
+  Object.entries(by).forEach(([k,sub])=>{
+    const isAudit=k==='Full audit';const cont=isAudit?sub*n0(r.contingency)/100:0;const oh=isAudit?(sub+cont)*n0(r.overhead)/100:0;const tax=isAudit?(sub+cont+oh)*n0(r.tax)/100:0;
+    out[k]={sub,cont,oh,tax,total:sub+cont+oh+tax};grand+=out[k].total});
+  return {phases:out,grand};
+}
+function programmeRange(){
+  const cs=costSummary();const audit=(cs.phases['Full audit']||{}).total||0;const l=ta('proposal','later');
+  const lo=n0(l.capex_low),hi=n0(l.capex_high)||lo,dp=n0(l.design_pct)/100,mon=n0(l.mon_months)*n0(l.mon_cost);
+  return {audit,remLo:lo*(1+dp),remHi:hi*(1+dp),mon,lo:audit+lo*(1+dp)+mon,hi:audit+hi*(1+dp)+mon};
+}
+function weeksPlan(a){a=a||ta('proposal','timeline');const w=n0(a.mob_weeks)+n0(a.field_weeks)+n0(a.lab_weeks)+n0(a.report_weeks);let end='';if(a.start&&w){const d=new Date(a.start+'T00:00:00');d.setDate(d.getDate()+w*7);end=d.toISOString().slice(0,10)}return {w,end}}
+
+const TASKSPEC={
+ pre:[
+  {key:'visit',title:'Confirm visit date, attendees and client contacts',qs:[
+   {id:'date',label:'Visit date',type:'date',req:true},{id:'team',label:'Cleanearth attendees',type:'text',req:true},
+   {id:'contacts',label:'Client contacts (name, role, phone)',type:'textarea',req:true},{id:'induction',label:'Is a site induction needed?',type:'chips',options:YN2}]},
+  {key:'inforeq',title:'Send the information request list to the client',qs:[
+   {id:'sent',label:'Date sent',type:'date',req:true},
+   {id:'requested',label:'Items requested',type:'multi',req:true,options:['EPA permit and limits','12–24 months of effluent results','WWTP design report','As-built drawings and P&IDs','O&M manual','Water and flow records','Production volumes','Chemical list and SDS','CIP procedures','Maintenance records','Sludge records']},
+   {id:'received',label:'Items received so far',type:'multi',options:['EPA permit and limits','12–24 months of effluent results','WWTP design report','As-built drawings and P&IDs','O&M manual','Water and flow records','Production volumes','Chemical list and SDS','CIP procedures','Maintenance records','Sludge records']}]},
+  {key:'docs',title:'Review documents received (permit, past results, drawings, O&M manual)',qs:[
+   {id:'permit',label:'Has the discharge permit been reviewed?',type:'chips',options:YN2,req:true},
+   {id:'limits',label:'Permit limits',type:'link',view:'analysis',text:()=>{const n=Object.values(limitsOf()).filter(l=>has(l.max)||has(l.min)).length;return n?`${n} limits entered`:'No limits entered yet'},btn:'Enter limits'},
+   {id:'months',label:'Months of past results reviewed',type:'number',unit:'months'},
+   {id:'notes',label:'What the documents show',type:'textarea',req:true}]},
+  {key:'walk',title:'Walk the site from water intake to final discharge',qs:[
+   {id:'date',label:'Date of walk-through',type:'date',req:true},{id:'route',label:'Route and key observations',type:'textarea',req:true},
+   {id:'obs',label:'Observations recorded',type:'link',view:'observations',text:()=>`${S.regs.observations.length} observations recorded`,btn:'Open observations'}]},
+  {key:'quest',title:'Complete every questionnaire section',qs:[
+   {id:'progress',label:'Questionnaire progress',type:'calc',fn:()=>{const t=SECTIONS.reduce((x,s)=>{const p=secProgress(s);x.n+=p.n;x.t+=p.t;return x},{n:0,t:0});return calcRow([[`${t.n} of ${t.t}`,'Questions answered'],[t.t?Math.round(t.n/t.t*100)+'%':'–','Complete']])}},
+   {id:'link',label:'Questionnaire',type:'link',view:'questions',text:()=>'Answer the remaining sections',btn:'Open questionnaire'},
+   {id:'ok',label:'All sections answered or marked unknown',type:'chips',options:DONE,req:true}]},
+  {key:'equip',title:'Record all equipment with nameplate photos',qs:[
+   {id:'reg',label:'Equipment register',type:'link',view:'equipment',text:()=>`${S.regs.equipment.length} items recorded`,btn:'Open equipment'},
+   {id:'ok',label:'Every unit from intake to outlet is recorded',type:'chips',options:DONE,req:true}]},
+  {key:'chem',title:'Record all chemicals, doses and storage',qs:[
+   {id:'reg',label:'Chemicals register',type:'link',view:'chemicals',text:()=>`${S.regs.chemicals.length} chemicals recorded`,btn:'Open chemicals'},
+   {id:'ok',label:'All treatment and CIP chemicals are recorded',type:'chips',options:DONE,req:true}]},
+  {key:'readings',title:'Take spot readings (pH, temperature, DO, conductivity)',qs:[
+   {id:'reg',label:'Field readings',type:'link',view:'measurements',text:()=>`${S.regs.measurements.length} readings recorded`,btn:'Open field readings'},
+   {id:'meter',label:'Meter used and calibration date',type:'text'},
+   {id:'ok',label:'Readings taken at inlet, reactor and final outlet',type:'chips',options:DONE,req:true}]},
+  {key:'closeout',title:'Close-out meeting: agree next steps and outstanding data',qs:[
+   {id:'date',label:'Meeting date',type:'date',req:true},{id:'attendees',label:'Client attendees',type:'text'},
+   {id:'next',label:'Agreed next steps',type:'textarea',req:true},{id:'outstanding',label:'Data still to come from the client',type:'textarea'}]},
+  {key:'export',title:'Export the workbook to SharePoint',qs:[
+   {id:'go',label:'Workbook',type:'action',act:'export-xlsx',btn:'Download workbook'},
+   {id:'date',label:'Date saved to SharePoint',type:'date',req:true}]}],
+
+ proposal:[
+  {key:'basis',title:'Summarise the pre-audit findings and client objectives',intro:'Opens the proposal’s background. The automatic findings from the pre-audit are added to the proposal as well.',qs:[
+   {id:'problem',label:'The main problem in one or two sentences',type:'textarea',req:true},
+   {id:'objectives',label:'Client objectives',type:'multi',req:true,options:['Achieve EPA compliance','Avoid fines or closure','Meet group (Danone) standards','Reduce chemical costs','Reduce water use','Reuse treated water','Prepare for production expansion','Reduce sludge disposal costs']},
+   {id:'findings',label:'Findings from the pre-audit',type:'link',view:'overview',text:()=>{const f=flags();return `${f.filter(x=>x[0]==='bad').length} critical findings, ${f.filter(x=>x[0]!=='bad').length} concerns`},btn:'View findings'},
+   {id:'deadline',label:'Compliance deadline, if any',type:'date'},
+   {id:'decision_maker',label:'Decision maker',type:'text',ph:'Name and role'},
+   {id:'procurement',label:'Client procurement route',type:'chips',options:['Direct award','Three quotations','Formal tender','Approved vendor list']},
+   {id:'budget',label:'Budget expectations or constraints mentioned',type:'textarea'}]},
+  {key:'scope',title:'Define the audit scope and sampling plan',intro:'This drives the sample count, the cost estimate and the proposal text.',qs:[
+   {id:'areas',label:'Areas in scope',type:'multi',req:true,options:['WWTP performance','Water treatment plant','Production and CIP source survey','Water balance','Chemicals and dosing','Sludge handling','Asset condition survey','Operations and management review']},
+   {id:'points',label:'Sampling points',type:'multi',req:true,options:POINT_NAMES},
+   {id:'days',label:'Monitoring duration',type:'number',unit:'days',req:true,hint:'Normally 5–7 consecutive days, covering normal production, CIP and a weekend.'},
+   {id:'comp',label:'24-hour composite samples',type:'number',unit:'per point per day',req:true},
+   {id:'grab',label:'Grab samples',type:'number',unit:'per point per day'},
+   {id:'source',label:'Source samples (CIP rinses, product lines, drains)',type:'number',unit:'samples in total'},
+   {id:'params',label:'Parameters analysed on each sample',type:'multi',req:true,options:PARAM_LABELS},
+   {id:'tests',label:'Process tests',type:'multi',options:['SV30 and SVI','Microscopy','Jar tests','DAF performance test','Oxygen uptake rate','Clarifier assessment']},
+   {id:'metering',label:'Flow metering',type:'chips',req:true,options:['Existing meters','Hire portable meters','Timed bucket / estimate']},
+   {id:'meters',label:'Flow meters to hire',type:'number',unit:'meters'},
+   {id:'calc',label:'Sampling totals',type:'calc',fn:a=>{const s=scopeNumbers(a);return calcRow([[s.samples,'Samples in total'],[s.analyses,'Laboratory analyses'],[s.micro?s.samples*s.micro:0,'Of which microbiology']])}}]},
+  {key:'rates',title:'Enter rates and build the audit cost estimate',intro:'Rates are your own. The button turns the scope and rates into cost lines on the Costing tab; run it again after any change.',qs:[
+   {id:'lab',label:'Average laboratory rate',type:'number',unit:'GHS per analysis',req:true},
+   {id:'micro',label:'Microbiology rate (if different)',type:'number',unit:'GHS per analysis'},
+   {id:'eng_rate',label:'Engineer day rate',type:'number',unit:'GHS/day',req:true},
+   {id:'eng_n',label:'Engineers on site',type:'number',unit:'people',req:true},
+   {id:'tech_rate',label:'Technician day rate',type:'number',unit:'GHS/day'},
+   {id:'tech_n',label:'Technicians on site',type:'number',unit:'people'},
+   {id:'field_days',label:'Days on site (including set-up and removal)',type:'number',unit:'days',req:true,hint:'Usually the monitoring days plus 2.'},
+   {id:'office_days',label:'Analysis and reporting',type:'number',unit:'days',req:true},
+   {id:'senior_rate',label:'Senior engineer day rate',type:'number',unit:'GHS/day'},
+   {id:'senior_days',label:'Senior review',type:'number',unit:'days'},
+   {id:'meter_rate',label:'Flow meter hire',type:'number',unit:'GHS per meter per day'},
+   {id:'transport',label:'Transport',type:'number',unit:'GHS/day'},
+   {id:'consumables',label:'Consumables, bottles, ice and PPE',type:'number',unit:'GHS lump sum'},
+   {id:'tests_cost',label:'Process and jar tests',type:'number',unit:'GHS lump sum'},
+   {id:'contingency',label:'Contingency',type:'number',unit:'%'},
+   {id:'overhead',label:'Overhead and profit',type:'number',unit:'%'},
+   {id:'tax',label:'VAT and levies',type:'number',unit:'%'},
+   {id:'go',label:'Cost lines',type:'action',act:'build-costs',btn:'Create audit cost lines'},
+   {id:'calc',label:'Audit estimate',type:'calc',fn:()=>{const lines=auditCostLines();const sub=lines.reduce((x,l)=>x+l.qty*l.rate,0);const r=ta('proposal','rates');const c=sub*n0(r.contingency)/100,o=(sub+c)*n0(r.overhead)/100,t=(sub+c+o)*n0(r.tax)/100;return calcRow([[money(sub),'Direct costs'],[money(c+o),'Contingency, overhead and profit'],[money(t),'VAT and levies'],[money(sub+c+o+t),'Audit price']])}}]},
+  {key:'later',title:'Estimate the full programme (remediation and monitoring)',intro:'Indicative figures so the client sees the whole journey, not just the audit.',qs:[
+   {id:'rem_scope',label:'Likely remediation',type:'chips',options:['Operational fixes only','Minor upgrades','Major upgrade','New treatment plant'],req:true},
+   {id:'capex_low',label:'Remediation capital cost, low',type:'number',unit:'GHS',req:true},
+   {id:'capex_high',label:'Remediation capital cost, high',type:'number',unit:'GHS',req:true},
+   {id:'design_pct',label:'Design and supervision fee',type:'number',unit:'% of capital'},
+   {id:'mon_months',label:'Compliance monitoring period',type:'number',unit:'months'},
+   {id:'mon_cost',label:'Monitoring cost',type:'number',unit:'GHS/month'},
+   {id:'basis',label:'Basis of the estimate',type:'textarea',hint:'e.g. benchmarks from similar dairy plants; to be confirmed by the audit.'},
+   {id:'calc',label:'Programme estimate',type:'calc',fn:()=>{const p=programmeRange();return calcRow([[money(p.audit),'Audit'],[`${money(p.remLo)} – ${money(p.remHi)}`,'Remediation incl. design'],[money(p.mon),'Monitoring'],[`${money(p.lo)} – ${money(p.hi)}`,'Whole programme']])}}]},
+  {key:'timeline',title:'Set the programme and timeline',qs:[
+   {id:'start',label:'Target start date',type:'date'},
+   {id:'mob_weeks',label:'Mobilisation',type:'number',unit:'weeks',req:true},
+   {id:'field_weeks',label:'Fieldwork',type:'number',unit:'weeks',req:true},
+   {id:'lab_weeks',label:'Laboratory turnaround',type:'number',unit:'weeks',req:true},
+   {id:'report_weeks',label:'Analysis and reporting',type:'number',unit:'weeks',req:true},
+   {id:'calc',label:'Duration',type:'calc',fn:a=>{const w=weeksPlan(a);return calcRow([[w.w?w.w+' weeks':'–','Total duration'],[w.end?fmtDate(w.end):'–','Expected completion']])}}]},
+  {key:'terms',title:'Agree commercial terms, assumptions and exclusions',qs:[
+   {id:'payment',label:'Payment terms',type:'chips',req:true,options:['50% on acceptance, 50% on final report','30% on acceptance, 40% after fieldwork, 30% on final report','100% on final report']},
+   {id:'validity',label:'Proposal valid for',type:'number',unit:'days',req:true},
+   {id:'client_resp',label:'Client responsibilities',type:'multi',options:['Site access and escort','Safe access to sampling points','Power for samplers and meters','Historical data and drawings','Operator availability for interviews','Secure storage for equipment']},
+   {id:'assumptions',label:'Assumptions',type:'textarea',hint:'e.g. normal production during monitoring; results from an accredited laboratory.'},
+   {id:'exclusions',label:'Exclusions',type:'textarea',hint:'e.g. detailed design, civil works, permit applications.'}]},
+  {key:'doc',title:'Generate the proposal and review it internally',intro:'Builds a Word proposal from the pre-audit findings, scope, programme and costs. Edit it in Word before sending.',qs:[
+   {id:'ref',label:'Proposal reference',type:'text',req:true,ph:'e.g. CE-WS-2026-014'},
+   {id:'author',label:'Prepared by',type:'text',req:true},
+   {id:'go',label:'Proposal document',type:'action',act:'gen-proposal',btn:'Generate proposal (.docx)'},
+   {id:'reviewer',label:'Reviewed by',type:'text',req:true},{id:'review_date',label:'Review date',type:'date'}]},
+  {key:'submit',title:'Submit the proposal to the client',qs:[
+   {id:'date',label:'Date submitted',type:'date',req:true},{id:'to',label:'Submitted to',type:'text',req:true},{id:'value',label:'Value submitted',type:'number',unit:'GHS'}]},
+  {key:'decision',title:'Client decision and contract',qs:[
+   {id:'decision',label:'Client decision',type:'chips',req:true,options:['Approved','Revise and resubmit','Declined','Pending']},
+   {id:'po',label:'Purchase order or contract number',type:'text'},{id:'value',label:'Approved value',type:'number',unit:'GHS'},
+   {id:'signed',label:'Contract signed on',type:'date'},{id:'notes',label:'Client comments',type:'textarea'}]},
+  {key:'access',title:'Confirm site access, induction and PPE',qs:[
+   {id:'access',label:'Site access confirmed',type:'chips',options:YN2,req:true},{id:'induction',label:'Induction date',type:'date'},
+   {id:'ppe',label:'PPE and permit requirements',type:'textarea'}]}],
+
+ audit:[
+  {key:'mob',title:'Mobilise: induction, permits and calibrated equipment',qs:[
+   {id:'induction',label:'Team inducted',type:'chips',options:YN2,req:true},
+   {id:'equipment',label:'Equipment taken to site',type:'multi',req:true,options:['Composite samplers','Flow meters','Multiparameter meter','DO meter','Sample bottles and preservatives','Cool boxes and ice','Jar test kit','Imhoff cones / 1 L cylinders','PPE']},
+   {id:'cal',label:'Meters calibrated on',type:'date',req:true},{id:'team',label:'Team on site',type:'text'}]},
+  {key:'flowmeter',title:'Install or verify flow meters at inlet and outlet',qs:[
+   {id:'points',label:'Metered points',type:'multi',req:true,options:POINT_NAMES},
+   {id:'type',label:'Meter type',type:'chips',options:['Electromagnetic','Ultrasonic','Weir or flume','Pump run-hours','Timed bucket'],req:true},
+   {id:'verified',label:'How the readings were checked',type:'text'},{id:'interval',label:'Logging interval',type:'chips',options:['1 min','5 min','15 min','Daily totals']},
+   {id:'log',label:'Flow log',type:'link',view:'flows',text:()=>{const f=measured().fin;return f?`${f.n} days logged, average ${fmtN(f.avg)} m³/day`:'No flows logged yet'},btn:'Open flow log'}]},
+  {key:'campaign',title:'Run the sampling campaign',qs:[
+   {id:'start',label:'Campaign start',type:'date',req:true},{id:'end',label:'Campaign end',type:'date',req:true},
+   {id:'method',label:'Composite method',type:'chips',req:true,options:['Auto sampler, flow-proportional','Auto sampler, time-proportional','Manual hourly grabs combined']},
+   {id:'samples',label:'Samples',type:'link',view:'samples',text:()=>{const c=S.regs.samples.length,d=S.regs.samples.filter(x=>['Collected','Sent to lab','Results received'].includes(x.status)).length;return `${c} samples planned, ${d} collected`},btn:'Open samples'},
+   {id:'deviations',label:'Deviations from the sampling plan',type:'textarea'},{id:'events',label:'Rain, shutdowns or unusual production',type:'textarea'}]},
+  {key:'source',title:'Sample individual sources (CIP rinses, product lines, drains)',qs:[
+   {id:'streams',label:'Streams sampled',type:'multi',req:true,options:['CIP pre-rinse','CIP caustic','CIP acid','CIP final rinse','Product line washouts','Rejected product','Floor drains','Boiler blowdown','Cooling tower bleed','Canteen and toilets']},
+   {id:'worst',label:'Highest-load stream',type:'text',req:true},{id:'loss',label:'Estimated product loss to drain',type:'number',unit:'kg/day'},
+   {id:'notes',label:'Segregation or recovery opportunities',type:'textarea'}]},
+  {key:'field',title:'Record daily field readings',qs:[
+   {id:'reg',label:'Field readings',type:'link',view:'measurements',text:()=>`${S.regs.measurements.length} readings recorded`,btn:'Open field readings'},
+   {id:'params',label:'Parameters read each day',type:'multi',options:['pH','Temperature','Dissolved oxygen','Conductivity','Turbidity'],req:true},
+   {id:'ok',label:'Readings taken every monitoring day',type:'chips',options:DONE,req:true}]},
+  {key:'process',title:'Process tests: settleability, microscopy, DAF and clarifier',qs:[
+   {id:'mlss',label:'MLSS',type:'number',unit:'mg/L',req:true},{id:'sv30',label:'SV30',type:'number',unit:'mL/L',req:true},
+   {id:'volume',label:'Aeration tank volume',type:'number',unit:'m³'},{id:'do_profile',label:'DO profile along the reactor',type:'textarea'},
+   {id:'micro',label:'Microscopy findings (filaments, protozoa, floc)',type:'textarea'},
+   {id:'daf_in',label:'DAF inlet TSS',type:'number',unit:'mg/L'},{id:'daf_out',label:'DAF outlet TSS',type:'number',unit:'mg/L'},
+   {id:'clar_area',label:'Clarifier surface area',type:'number',unit:'m²'},{id:'peak',label:'Peak flow',type:'number',unit:'m³/h'},
+   {id:'calc',label:'Calculated',type:'calc',fn:a=>{const mlss=num(a.mlss),sv=num(a.sv30),vol=num(a.volume);const svi=mlss&&sv?sv*1000/mlss:null;
+     const load=measured().load??num(ans('wwtp','actual_cod'));const fm=load&&mlss&&vol?load/(mlss/1000*vol):null;
+     const daf=num(a.daf_in)&&num(a.daf_out)!==null?(1-num(a.daf_out)/num(a.daf_in))*100:null;const sor=num(a.peak)&&num(a.clar_area)?num(a.peak)/num(a.clar_area):null;
+     return calcRow([[svi?fmtN(svi)+' mL/g':'–','SVI (above 150 suggests bulking)'],[fm?fmtN(fm):'–','F/M, kg COD per kg MLSS per day'],[daf!==null?Math.round(daf)+'%':'–','DAF TSS removal'],[sor?fmtN(sor)+' m/h':'–','Clarifier overflow rate at peak']])}}]},
+  {key:'jar',title:'Jar tests for coagulant and flocculant doses',qs:[
+   {id:'chems',label:'Products tested',type:'multi',req:true,options:['Ferric chloride','Aluminium sulphate','Polyaluminium chloride','Anionic polymer','Cationic polymer','Lime','Caustic soda']},
+   {id:'current',label:'Current dose',type:'number',unit:'mg/L'},{id:'optimum',label:'Optimum dose found',type:'number',unit:'mg/L',req:true},
+   {id:'ph',label:'Best pH range',type:'text'},{id:'removal',label:'Removal achieved',type:'textarea',hint:'e.g. TSS 85%, FOG 90%, COD 55%'},
+   {id:'calc',label:'Dose change',type:'calc',fn:a=>{const c=num(a.current),o=num(a.optimum);return calcRow([[c&&o?Math.round((o-c)/c*100)+'%':'–','Change from current dose']])}}]},
+  {key:'wbal',title:'Water balance from intake to discharge',qs:[
+   {id:'intake',label:'Total water intake',type:'number',unit:'m³/day',req:true},{id:'product',label:'Water leaving in product',type:'number',unit:'m³/day'},
+   {id:'evap',label:'Evaporation and steam losses',type:'number',unit:'m³/day'},{id:'domestic',label:'Domestic use (not to WWTP)',type:'number',unit:'m³/day'},
+   {id:'ww',label:'Wastewater to WWTP',type:'number',unit:'m³/day',req:true},{id:'output',label:'Product output',type:'number',unit:'L/day'},
+   {id:'calc',label:'Balance',type:'calc',fn:a=>{const i=num(a.intake);if(!i)return calcRow([['–','Unaccounted water']]);const u=i-n0(a.product)-n0(a.evap)-n0(a.domestic)-n0(a.ww);const r=num(a.output)?i*1000/num(a.output):null;
+     return calcRow([[fmtN(u)+' m³/day','Unaccounted water'],[Math.round(u/i*100)+'%','Of intake'],[r?fmtN(r):'–','Litres of water per litre of product']])}}]},
+  {key:'assets',title:'Asset condition assessment for every unit',qs:[
+   {id:'reg',label:'Equipment register',type:'link',view:'equipment',text:()=>{const e=S.regs.equipment;return `${e.length} items, ${e.filter(x=>x.condition==='Poor'||x.condition==='Not working').length} poor or not working`},btn:'Open equipment'},
+   {id:'critical',label:'Critical failures affecting treatment',type:'textarea',req:true},{id:'spares',label:'Critical spares',type:'chips',options:['Adequate','Partial','None']},
+   {id:'instruments',label:'Instruments calibrated and working',type:'chips',options:YN2},{id:'energy',label:'WWTP energy use',type:'number',unit:'kWh/day'}]},
+  {key:'sludge',title:'Sludge sampling and quantities',qs:[
+   {id:'production',label:'Sludge production',type:'number',unit:'kg dry solids/day',req:true},{id:'cake',label:'Dewatered cake',type:'number',unit:'tonnes/week'},
+   {id:'ds',label:'Cake dry solids',type:'number',unit:'%'},{id:'route',label:'Disposal route compliant?',type:'chips',options:YN2,req:true},{id:'notes',label:'Notes',type:'textarea'}]},
+  {key:'ops',title:'Operator interviews and review of logs',qs:[
+   {id:'interviews',label:'Operators interviewed',type:'number',unit:'people',req:true},{id:'logs',label:'Months of logs reviewed',type:'number',unit:'months'},
+   {id:'gaps',label:'SOP and practice gaps',type:'textarea',req:true},{id:'training',label:'Training needs',type:'textarea'},{id:'backlog',label:'Maintenance backlog',type:'textarea'}]},
+  {key:'labqa',title:'Chain of custody and laboratory quality',qs:[
+   {id:'lab',label:'Laboratory',type:'text',req:true},{id:'accred',label:'Accreditation',type:'chips',options:['ISO/IEC 17025','Other recognised','None','Unknown'],req:true},
+   {id:'coc',label:'Chain of custody complete',type:'chips',options:YN2,req:true},{id:'hold',label:'Holding times met',type:'chips',options:YN2,req:true},
+   {id:'qc',label:'Blanks and duplicates included',type:'chips',options:YN2}]},
+  {key:'results',title:'Lab results received, checked and entered',qs:[
+   {id:'reg',label:'Lab results',type:'link',view:'results',text:()=>`${S.regs.results.length} of ${S.regs.samples.length} samples have results`,btn:'Open lab results'},
+   {id:'received',label:'Final results received on',type:'date',req:true},{id:'checked',label:'Results checked for errors and outliers',type:'chips',options:DONE,req:true}]},
+  {key:'analysis',title:'Analysis: loads, removal efficiencies and limit exceedances',qs:[
+   {id:'link',label:'Analysis',type:'link',view:'analysis',text:()=>{const r=analysisRows();return `${r.filter(x=>x.status==='Exceeds').length} parameters exceed limits`},btn:'Open analysis'},
+   {id:'summary',label:'Summary of the analysis',type:'textarea',req:true}]},
+  {key:'rca',title:'Root-cause analysis for each failing parameter',qs:[
+   {id:'factors',label:'Contributing factors',type:'multi',req:true,options:['Hydraulic overload','Organic overload','CIP shock loads','Fats, oils and grease','Poor DAF performance','Low DO or aeration','Poor sludge settling','Nutrient imbalance','Chemical dosing','Operator practice','Equipment failure','Monitoring gaps']},
+   {id:'causes',label:'Root cause for each failing parameter',type:'textarea',req:true},{id:'quick',label:'Quick wins',type:'textarea'}]},
+  {key:'report',title:'Write, review and present the audit report',qs:[
+   {id:'draft',label:'Draft completed',type:'date'},{id:'reviewer',label:'Reviewed by',type:'text',req:true},{id:'issued',label:'Report issued',type:'date',req:true},
+   {id:'presented',label:'Presented to the client',type:'date'},{id:'recs',label:'Key recommendations',type:'textarea',req:true}]}],
+
+ remediation:[
+  {key:'screen',title:'List and screen remediation options',qs:[
+   {id:'reg',label:'Options',type:'link',view:'options',text:()=>`${S.regs.options.length} options listed`,btn:'Open options'},
+   {id:'criteria',label:'Screening criteria',type:'multi',req:true,options:['Capital cost','Running cost','Compliance impact','Footprint','Ease of operation','Lead time','Energy use','Sludge produced']},
+   {id:'shortlist',label:'Shortlisted options and why',type:'textarea',req:true}]},
+  {key:'optcost',title:'Cost each shortlisted option',qs:[
+   {id:'basis',label:'Basis of costs',type:'chips',options:['Supplier quotes','Budget estimates','Benchmarks'],req:true},{id:'contingency',label:'Contingency',type:'number',unit:'%'},
+   {id:'calc',label:'Agreed options',type:'calc',fn:()=>{const ag=S.regs.options.filter(o=>['Agreed','In design','Implemented'].includes(o.status));return calcRow([[ag.length,'Options agreed'],[money(ag.reduce((x,o)=>x+n0(o.capex),0)),'Capital cost'],[money(ag.reduce((x,o)=>x+n0(o.opex),0)),'Change in running cost per year']])}}]},
+  {key:'agree',title:'Agree preferred options with the client',qs:[
+   {id:'date',label:'Meeting date',type:'date',req:true},{id:'agreed',label:'Options agreed',type:'textarea',req:true},{id:'budget',label:'Budget approved',type:'number',unit:'GHS'},{id:'by',label:'Approved by',type:'text'}]},
+  {key:'proposal',title:'Prepare the remediation proposal and costing',qs:[
+   {id:'costing',label:'Costing',type:'link',view:'costing',text:()=>{const p=costSummary().phases['Remediation and retrofit'];return p?money(p.total):'No remediation costs entered'},btn:'Open costing'},
+   {id:'submitted',label:'Submitted on',type:'date',req:true},{id:'decision',label:'Client decision',type:'chips',options:['Approved','Revise','Declined','Pending'],req:true}]},
+  {key:'design',title:'Concept and detailed design',qs:[
+   {id:'flow',label:'Design flow',type:'number',unit:'m³/day',req:true},{id:'cod',label:'Design COD load',type:'number',unit:'kg/day',req:true},
+   {id:'targets',label:'Effluent targets',type:'textarea',req:true},
+   {id:'drawings',label:'Drawings produced',type:'multi',options:['Process flow diagram','P&ID','General arrangement','Electrical','Civil and structural']},
+   {id:'review',label:'Design review date',type:'date'}]},
+  {key:'proc',title:'Procurement and supplier selection',qs:[
+   {id:'quotes',label:'Quotations received',type:'number'},{id:'supplier',label:'Selected supplier',type:'text',req:true},{id:'po',label:'Purchase order date',type:'date',req:true},{id:'lead',label:'Delivery lead time',type:'number',unit:'weeks'}]},
+  {key:'install',title:'Installation and civil works',qs:[
+   {id:'start',label:'Start date',type:'date',req:true},{id:'finish',label:'Completion date',type:'date',req:true},{id:'contractor',label:'Contractor',type:'text'},
+   {id:'incidents',label:'Safety incidents',type:'number'},{id:'variations',label:'Variations and delays',type:'textarea'}]},
+  {key:'comm',title:'Commissioning and performance testing',qs:[
+   {id:'start',label:'Commissioning started',type:'date',req:true},{id:'days',label:'Performance test duration',type:'number',unit:'days'},
+   {id:'met',label:'Effluent targets met',type:'chips',options:['Yes','Partly','No'],req:true},{id:'punch',label:'Outstanding items',type:'textarea'}]},
+  {key:'handover',title:'Training, updated SOPs and handover',qs:[
+   {id:'trained',label:'Operators trained',type:'number',unit:'people',req:true},{id:'sops',label:'SOPs updated',type:'chips',options:YN2,req:true},
+   {id:'om',label:'O&M manual and drawings handed over',type:'chips',options:YN2,req:true},{id:'warranty',label:'Warranty period',type:'number',unit:'months'}]}],
+
+ monitoring:[
+  {key:'plan',title:'Agree the monitoring plan',qs:[
+   {id:'freq',label:'Sampling frequency',type:'chips',options:['Weekly','Fortnightly','Monthly','Quarterly'],req:true},
+   {id:'params',label:'Parameters',type:'multi',options:PARAM_LABELS,req:true},{id:'points',label:'Sampling points',type:'multi',options:POINT_NAMES,req:true},
+   {id:'lab',label:'Laboratory',type:'text'},{id:'start',label:'Start date',type:'date',req:true}]},
+  {key:'review',title:'Review results against limits',qs:[
+   {id:'link',label:'Analysis',type:'link',view:'analysis',text:()=>{const r=analysisRows();return `${r.filter(x=>x.status==='Exceeds').length} parameters currently exceed limits`},btn:'Open analysis'},
+   {id:'period',label:'Period reviewed',type:'text',req:true,ph:'e.g. January–March 2027'},{id:'compliant',label:'Samples compliant',type:'number',req:true},{id:'total',label:'Samples taken',type:'number',req:true},
+   {id:'calc',label:'Compliance rate',type:'calc',fn:a=>calcRow([[num(a.total)?Math.round(n0(a.compliant)/num(a.total)*100)+'%':'–','Compliance rate']])},
+   {id:'issues',label:'Issues and actions',type:'textarea'}]},
+  {key:'meet',title:'Quarterly review with the client',qs:[
+   {id:'date',label:'Last review',type:'date',req:true},{id:'actions',label:'Actions agreed',type:'textarea',req:true},{id:'next',label:'Next review',type:'date'}]},
+  {key:'service',title:'Maintenance and service visits',qs:[
+   {id:'contract',label:'Service contract in place',type:'chips',options:YN2,req:true},{id:'visits',label:'Visits per year',type:'number'},{id:'last',label:'Last visit',type:'date'}]},
+  {key:'annual',title:'Annual audit refresher',qs:[
+   {id:'date',label:'Date',type:'date',req:true},{id:'scope',label:'Scope and findings',type:'textarea',req:true}]}]
+};
+const TEMPLATES=Object.fromEntries(Object.entries(TASKSPEC).map(([k,v])=>[k,v.map(t=>t.title)]));
+function specFor(t){const L=TASKSPEC[t.phase]||[];return L.find(x=>x.key&&x.key===t.key)||L.find(x=>x.title===t.title)||null}
+function answeredQ(q,v){return Array.isArray(v)?v.length>0:has(v)}
+function reqProgress(t){const sp=specFor(t);const rq=sp?sp.qs.filter(q=>q.req):[];const a=t.answers||{};return {n:rq.filter(q=>answeredQ(q,a[q.id])).length,t:rq.length}}
+
 
 /* ---------- state ---------- */
 const S={db:null,user:null,uid:null,assets:null,downloads:null,canWrite:null,
@@ -637,7 +925,7 @@ function selectAudit(id){
   },()=>{}));
   REG_KEYS.forEach(k=>S.unsubs.push(S.db.collection(base+'/'+k).onSnapshot(snap=>{
     S.regs[k]=snap.docs.map(d=>({id:d.id,...d.data()}));S.regsLoaded[k]=true;
-    renderTabs();if(S.view===k||S.view==='overview')render();
+    renderTabs();if(S.view==='task'){patchTaskForm();return}if(S.sheet)return;if(S.view===k||S.view==='overview'||S.view==='analysis'||S.view==='tasks'||(S.view==='costing'&&k==='tasks'))render();
   },()=>{})));
   render();
 }
@@ -671,7 +959,7 @@ function renderTabs(){
   const sub=$('#subtabs');const P=phaseOf(cur);
   if(!P||!S.audit){sub.hidden=true;sub.innerHTML='';return}
   sub.hidden=false;
-  sub.innerHTML=P.views.map(([k,l])=>{const c=countFor(k);return `<button type="button" data-view="${k}" ${S.view===k?'aria-current="page"':''}>${esc(viewLabel(k,l))}${c!==''?`<span class="count">${c}</span>`:''}</button>`}).join('');
+  sub.innerHTML=P.views.map(([k,l])=>{const c=countFor(k);return `<button type="button" data-view="${k}" ${S.view===k||(S.view==='task'&&k==='tasks')?'aria-current="page"':''}>${esc(viewLabel(k,l))}${c!==''?`<span class="count">${c}</span>`:''}</button>`}).join('');
 }
 $('#tabs').addEventListener('click',e=>{const b=e.target.closest('button[data-phase]');if(!b)return;const k=b.dataset.phase;
   if(k==='overview'){go('overview');return}
@@ -680,7 +968,7 @@ $('#subtabs').addEventListener('click',e=>{const b=e.target.closest('button[data
 $('#switchBtn').addEventListener('click',()=>go('audits'));
 $('#saveStatus').addEventListener('click',()=>{if(S.outbox.length)flush()});
 function go(v,opts={}){
-  if(v!=='overview'&&v!=='audits'){S.phase=viewPhase(v);S.lastView=S.lastView||{};S.lastView[S.phase]=v;ls.set('ce-phase',S.phase)}
+  if(v!=='overview'&&v!=='audits'&&v!=='task'){S.phase=viewPhase(v);S.lastView=S.lastView||{};S.lastView[S.phase]=v;ls.set('ce-phase',S.phase)}
   S.view=v;if(v!=='audits')ls.set('ce-view',v);if(opts.section!==undefined)S.section=opts.section;render();window.scrollTo({top:0})}
 
 function render(){
@@ -695,6 +983,7 @@ function render(){
   if(!S.audit){m.innerHTML=banner+(S.auditsLoaded?`<div class="empty"><b>No project yet</b>Create the first client project to start recording.<div style="margin-top:12px"><button class="btn primary" type="button" data-act="audits">Create a project</button></div></div>`:`<div class="empty"><b>Loading projects</b>Entries from the whole team appear here.</div>`);return}
   if(S.view==='overview')m.innerHTML=banner+viewOverview();
   else if(S.view==='questions'){m.innerHTML=banner+viewQuestions();bindForm()}
+  else if(S.view==='task')m.innerHTML=banner+viewTask();
   else if(S.view==='tasks')m.innerHTML=banner+phaseHead()+viewTasks(S.phase);
   else if(S.view==='analysis')m.innerHTML=banner+phaseHead()+viewAnalysis();
   else if(REGS[S.view])m.innerHTML=banner+phaseHead()+viewRegister(S.view);
@@ -826,28 +1115,142 @@ function phaseTracker(){
     return `<li class="ph ${st}"><button type="button" class="phbtn" data-phase-go="${p.id}"><span class="pdot">${st==='done'?'✓':i+1}</span><span class="pt"><b>${esc(p.label)}</b><span class="muted">${pr.t?`${pr.n} of ${pr.t} tasks done`:'Checklist not started'}</span>${pr.t?`<span class="meter"><i class="${pr.n===pr.t?'full':''}" style="width:${pr.n/pr.t*100}%"></i></span>`:''}</span></button>
     ${st!=='current'&&!ro?`<button type="button" class="btn ghost small" data-set-phase="${p.id}">Make current</button>`:st==='current'?'<span class="pill info">Current</span>':''}</li>`}).join('')}</ol></section>`;
 }
+/* ---------- checklist & task pages ---------- */
 function viewTasks(ph){
   const P=phaseOf(ph);const rows=S.regs.tasks.filter(t=>t.phase===ph).sort((a,b)=>(a.order??999)-(b.order??999)||(a.createdAt||0)-(b.createdAt||0));
   const pr=phaseProgress(ph);const ro=readOnly();const missing=TEMPLATES[ph].filter(t=>!rows.some(r=>r.title===t)).length;
-  return `<div class="sechead"><div><h2>${esc(P.label)} checklist</h2><p class="intro" style="margin:4px 0 0">${esc(P.intro)}</p></div>
+  return `<div class="sechead"><div><h2>${esc(P.label)} checklist</h2><p class="intro" style="margin:4px 0 0">${esc(P.intro)} Open a task to answer what is needed to call it done.</p></div>
    <div class="row">${missing&&!ro?`<button class="btn" type="button" data-act="load-template">${rows.length?`Add ${missing} standard task${missing>1?'s':''}`:'Load standard checklist'}</button>`:''}<button class="btn primary" type="button" data-act="add-task" ${ro?'disabled':''}>Add task</button></div></div>
+   ${ph==='proposal'?proposalBar():''}
    ${pr.t?`<div class="card" style="margin-bottom:12px;padding:12px 16px"><div class="row" style="justify-content:space-between"><b>${pr.n} of ${pr.t} done</b><span class="frac">${Math.round(pr.n/pr.t*100)}%</span></div><div class="meter" style="margin-top:8px"><i class="${pr.n===pr.t?'full':''}" style="width:${pr.n/pr.t*100}%"></i></div></div>`:''}
-   ${rows.length?`<ul class="tasks">${rows.map(r=>{const st=r.status||'To do';const overdue=r.due&&st!=='Done'&&st!=='Not needed'&&r.due<new Date().toISOString().slice(0,10);
+   ${rows.length?`<ul class="tasks">${rows.map(r=>{const st=r.status||'To do';const rp=reqProgress(r);const overdue=r.due&&st!=='Done'&&st!=='Not needed'&&r.due<new Date().toISOString().slice(0,10);
      return `<li class="task ${st==='Done'?'done':''} ${st==='Not needed'?'skip':''}"><button type="button" class="tick" data-tick="${esc(r.id)}" aria-pressed="${st==='Done'}" aria-label="Mark ${esc(r.title||'task')} done" ${ro?'disabled':''}>${st==='Done'?'✓':''}</button>
-      <button type="button" class="tbody" data-edit="${esc(r.id)}" data-k="tasks"><span class="tt">${esc(r.title||'Untitled task')}</span><span class="m">${[r.owner&&esc(r.owner),r.due&&`<span class="${overdue?'late':''}">Due ${esc(fmtDate(r.due))}</span>`].filter(Boolean).join(' · ')}</span></button>
-      ${st==='In progress'||st==='Not needed'?`<span class="pill ${st==='In progress'?'info':''}">${esc(st)}</span>`:''}</li>`}).join('')}</ul>`
-   :`<div class="empty"><b>No tasks yet</b>Load the standard checklist for this phase, then edit, add or skip tasks to fit the project.</div>`}`;
+      <button type="button" class="tbody" data-task="${esc(r.id)}"><span class="tt">${esc(r.title||'Untitled task')}</span><span class="m">${[rp.t?`${rp.n} of ${rp.t} required answered`:'',(r.photos||[]).length?`${r.photos.length} photo${r.photos.length>1?'s':''}`:'',r.owner&&esc(r.owner),r.due&&`<span class="${overdue?'late':''}">Due ${esc(fmtDate(r.due))}</span>`].filter(Boolean).join(' · ')}</span></button>
+      ${st==='In progress'||st==='Not needed'?`<span class="pill ${st==='In progress'?'info':''}">${esc(st)}</span>`:rp.t&&rp.n===rp.t&&st!=='Done'?'<span class="pill good">Ready</span>':''}<span class="chev" aria-hidden="true">›</span></li>`}).join('')}</ul>`
+   :`<div class="empty"><b>No tasks yet</b>Load the standard checklist for this phase, then open each task to complete it.</div>`}`;
+}
+function proposalBar(){
+  const cs=costSummary();const a=(cs.phases['Full audit']||{}).total;const p=programmeRange();
+  return `<div class="card" style="margin-bottom:12px"><div class="row" style="justify-content:space-between;align-items:flex-start"><div><div class="cardtitle" style="margin-bottom:6px">Proposal</div>
+   <div class="row" style="gap:20px"><span><b class="mono">${money(a||0)}</b> <span class="muted">audit price</span></span><span><b class="mono">${p.hi?`${money(p.lo)} – ${money(p.hi)}`:'–'}</b> <span class="muted">whole programme</span></span></div></div>
+   <div class="row"><button class="btn" type="button" data-view-go="costing">Costing</button>${S.downloads?'<button class="btn primary" type="button" data-act="gen-proposal">Generate proposal (.docx)</button>':''}</div></div></div>`;
 }
 async function loadTemplate(ph){
   const rows=S.regs.tasks.filter(t=>t.phase===ph);const now=Date.now();let n=0;
-  for(const [i,t] of TEMPLATES[ph].entries()){if(rows.some(r=>r.title===t))continue;
-    await write({op:'set',path:`audits/${S.auditId}/tasks/tsk-${ph}-${now.toString(36)}-${i}`,data:{title:t,phase:ph,status:'To do',order:i,createdAt:now,updatedAt:now,by:S.uid||null}});n++}
+  for(const [i,t] of TASKSPEC[ph].entries()){if(rows.some(r=>r.title===t.title||(t.key&&r.key===t.key)))continue;
+    await write({op:'set',path:`audits/${S.auditId}/tasks/tsk-${ph}-${t.key||i}-${now.toString(36)}`,data:{title:t.title,key:t.key||null,phase:ph,status:'To do',order:i,answers:{},createdAt:now,updatedAt:now,by:S.uid||null}});n++}
   toast(`${n} task${n===1?'':'s'} added.`);
 }
 async function tickTask(id){
-  const r=S.regs.tasks.find(x=>x.id===id);if(!r||readOnly())return;const st=r.status==='Done'?'To do':'Done';
-  r.status=st;render();
-  await write({op:'merge',path:`audits/${S.auditId}/tasks/${id}`,data:{status:st,updatedAt:Date.now(),editedBy:S.uid||null}});
+  const r=S.regs.tasks.find(x=>x.id===id);if(!r||readOnly())return;
+  if(r.status!=='Done'){const rp=reqProgress(r);if(rp.n<rp.t){toast(`Answer the required questions first (${rp.t-rp.n} left).`);openTask(id);return}}
+  const st=r.status==='Done'?'To do':'Done';r.status=st;render();
+  await write({op:'merge',path:`audits/${S.auditId}/tasks/${id}`,data:{status:st,doneAt:st==='Done'?Date.now():null,updatedAt:Date.now(),editedBy:S.uid||null}});
+}
+function openTask(id){S.taskId=id;S.view='task';render();window.scrollTo({top:0})}
+function curTask(){return S.regs.tasks.find(t=>t.id===S.taskId)}
+function tqHTML(q,a){
+  const req=q.req?'<span class="req">Required</span>':'';
+  if(q.type==='calc')return `<div class="q tcalc"><span class="ql">${esc(q.label)}</span><div data-calc="${q.id}">${q.fn(a)}</div></div>`;
+  if(q.type==='link')return `<div class="q"><span class="ql">${esc(q.label)}</span><div class="linkbox"><span data-linktext="${q.id}">${esc(q.text())}</span><button class="btn" type="button" data-view-go="${q.view}">${esc(q.btn||'Open')}</button></div></div>`;
+  if(q.type==='action')return `<div class="q"><span class="ql">${esc(q.label)}</span><div class="row"><button class="btn primary" type="button" data-act="${q.act}" ${readOnly()&&q.act!=='export-xlsx'&&q.act!=='gen-proposal'?'disabled':''}>${esc(q.btn)}</button></div></div>`;
+  return `<div class="q ${q.req&&!answeredQ(q,a[q.id])?'missing':''}" data-qwrap="${q.id}"><label class="ql" for="t-${q.id}">${esc(q.label)} ${req}</label>${q.hint?`<span class="hint">${esc(q.hint)}</span>`:''}${qInput(q,a[q.id],'t')}</div>`;
+}
+function viewTask(){
+  const t=curTask();if(!t)return `<div class="empty"><b>Task not found</b><button class="btn" type="button" data-view-go="tasks">Back to checklist</button></div>`;
+  const sp=specFor(t);const a=t.answers||{};const rp=reqProgress(t);const ro=readOnly();const st=t.status||'To do';const P=phaseOf(t.phase);
+  const tf=(id,label,type)=>`<div class="f"><label class="ql" for="tf-${id}">${label}</label>${type==='textarea'?`<textarea class="inp" id="tf-${id}" data-tf="${id}" ${ro?'disabled':''}>${esc(t[id]||'')}</textarea>`:`<input class="inp" id="tf-${id}" data-tf="${id}" type="${type}" value="${esc(t[id]||'')}" ${ro?'disabled':''}>`}</div>`;
+  return `<div class="taskpage">
+   <button class="btn ghost" type="button" data-view-go="tasks" style="margin-left:-8px">← ${esc(P?P.short:'')} checklist</button>
+   <div class="sechead" style="margin-top:4px"><div><span class="eyebrow">${esc(P?P.label:'')} · task</span><h2>${esc(t.title||'Untitled task')}</h2>${sp&&sp.intro?`<p class="intro" style="margin:6px 0 0">${esc(sp.intro)}</p>`:''}</div>
+    <span class="pill ${st==='Done'?'good':st==='In progress'?'info':''}" id="taskpill">${esc(st)}</span></div>
+   <div class="grid-task">
+    <section class="card" id="tqs">${rp.t?`<div class="reqbar"><span id="reqtext">${rp.n} of ${rp.t} required answered</span><span class="meter"><i id="reqmeter" class="${rp.n===rp.t?'full':''}" style="width:${rp.n/rp.t*100}%"></i></span></div>`:''}
+     ${sp?sp.qs.map(q=>tqHTML(q,a)).join(''):`<p class="muted" style="margin:0">This is a custom task. Use the notes to record what was done.</p>`}
+    </section>
+    <aside class="stack"><section class="card"><div class="cardtitle">Photos</div><div class="photos" id="taskPhotos">${taskPhotosHTML(t)}</div><p class="hint" style="margin:8px 0 0">Photos added here appear in the generated documents where relevant.</p></section>
+    <section class="card stack" style="gap:0"><div class="cardtitle">Task details</div>
+     ${sp?'':tf('title','Task','text')}${tf('owner','Owner','text')}${tf('due','Due date','date')}${tf('notes','Notes','textarea')}
+     <div class="f"><span class="ql">Status</span><div class="row">
+      ${st==='Done'?`<button class="btn" type="button" data-act="task-reopen" ${ro?'disabled':''}>Reopen</button>`:`<button class="btn primary" type="button" data-act="task-done" ${ro||rp.n<rp.t?'disabled':''}>Mark done</button>`}
+      ${st!=='Done'&&st!=='In progress'?`<button class="btn" type="button" data-act="task-progress" ${ro?'disabled':''}>In progress</button>`:''}
+      ${st!=='Not needed'?`<button class="btn" type="button" data-act="task-skip" ${ro?'disabled':''}>Not needed</button>`:''}</div>
+      <span class="hint" id="taskhint">${rp.n<rp.t&&st!=='Done'?`Answer the ${rp.t-rp.n} remaining required question${rp.t-rp.n>1?'s':''} to mark it done.`:''}</span></div>
+     ${!sp&&!ro?`<div class="f"><button class="btn danger" type="button" data-act="task-delete">Delete task</button></div>`:''}
+    </section></aside></div></div>`;
+}
+function taskPhotosHTML(t){
+  const ids=t.photos||[];const can=S.assets&&!readOnly();
+  return ids.map(id=>`<div class="photo"><img data-photo="${esc(id)}" alt="Task photo"><button type="button" data-trmphoto="${esc(id)}" aria-label="Remove photo" ${can?'':'hidden'}>×</button></div>`).join('')+
+   (can?(S.taskUploading?`<span class="addphoto">Uploading…</span>`:`<label class="addphoto cam" for="tcam"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>Take photo<input id="tcam" type="file" accept="image/*" capture="environment" hidden data-tupload="1"></label><label class="addphoto" for="tgal">From gallery<input id="tgal" type="file" accept="image/*" multiple hidden data-tupload="1"></label>`):(ids.length?'':'<span class="hint">No photos.</span>'));
+}
+function renderTaskPhotos(){const el=$('#taskPhotos');const t=curTask();if(el&&t)el.innerHTML=taskPhotosHTML(t)}
+async function uploadTaskPhotos(files){
+  const t=curTask();if(!t||!S.assets||readOnly())return;S.taskUploading=true;renderTaskPhotos();const added=[];
+  for(const f of files){
+    try{const blob=await compress(f);const res=await S.assets.upload(blob,{type:blob.type&&blob.type.startsWith('image/')?blob.type:'image/jpeg'});added.push(res.id)}
+    catch(e){toast(e&&e.code==='unavailable'?'No connection. Add the photo again when you have signal.':'Photo upload failed. Try again.');break}
+  }
+  S.taskUploading=false;
+  if(added.length){t.photos=[...(t.photos||[]),...added];await write({op:'merge',path:`audits/${S.auditId}/tasks/${t.id}`,data:{photos:t.photos,updatedAt:Date.now(),editedBy:S.uid||null}})}
+  renderTaskPhotos();
+}
+async function removeTaskPhoto(id){const t=curTask();if(!t||readOnly())return;t.photos=(t.photos||[]).filter(x=>x!==id);renderTaskPhotos();await write({op:'merge',path:`audits/${S.auditId}/tasks/${t.id}`,data:{photos:t.photos,updatedAt:Date.now(),editedBy:S.uid||null}})}
+function patchTaskForm(){
+  const t=curTask();if(!t)return render();const sp=specFor(t);const a=t.answers||{};
+  if(sp)sp.qs.forEach(q=>{
+    if(q.type==='calc'){const el=document.querySelector(`[data-calc="${q.id}"]`);if(el)el.innerHTML=q.fn(a);return}
+    if(q.type==='link'){const el=document.querySelector(`[data-linktext="${q.id}"]`);if(el)el.textContent=q.text();return}
+    const el=document.querySelector(`#tqs [data-q="${q.id}"]`);
+    const w=document.querySelector(`[data-qwrap="${q.id}"]`);if(w)w.classList.toggle('missing',!!q.req&&!answeredQ(q,a[q.id]));
+    if(!el||el.contains(document.activeElement)||S.timers['t:'+q.id])return;
+    if(el.dataset.kind==='single')el.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',String(a[q.id])===b.dataset.v));
+    else if(el.dataset.kind==='multi'){const arr=Array.isArray(a[q.id])?a[q.id]:[];el.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',arr.includes(b.dataset.v)))}
+    else if(el.value!==String(a[q.id]??''))el.value=a[q.id]??'';
+  });
+  if(!S.taskUploading){const pe=$('#taskPhotos');const cur=[...document.querySelectorAll('#taskPhotos img')].map(i=>i.dataset.photo).join('|');if(pe&&cur!==(t.photos||[]).join('|'))renderTaskPhotos()}
+  const rp=reqProgress(t);const rt=$('#reqtext'),rm=$('#reqmeter');if(rt)rt.textContent=`${rp.n} of ${rp.t} required answered`;if(rm){rm.style.width=(rp.t?rp.n/rp.t*100:0)+'%';rm.classList.toggle('full',rp.n===rp.t)}
+  const db=document.querySelector('[data-act="task-done"]');if(db)db.disabled=readOnly()||rp.n<rp.t;
+  const st=t.status||'To do';const tp=$('#taskpill');if(tp){tp.textContent=st;tp.className='pill '+(st==='Done'?'good':st==='In progress'?'info':'')}
+  const th=$('#taskhint');if(th)th.textContent=rp.n<rp.t&&st!=='Done'?`Answer the ${rp.t-rp.n} remaining required question${rp.t-rp.n>1?'s':''} to mark it done.`:'';
+}
+function saveTaskAnswer(qid,val){
+  const t=curTask();if(!t||readOnly())return;
+  const wasTodo=t.status==='To do'||!t.status;t.answers={...(t.answers||{}),[qid]:val};if(wasTodo)t.status='In progress';patchTaskForm();
+  write({op:'merge',path:`audits/${S.auditId}/tasks/${t.id}`,data:{answers:{[qid]:val},status:t.status,updatedAt:Date.now(),editedBy:S.uid||null}});
+}
+function saveTaskField(f,val){
+  const t=curTask();if(!t||readOnly())return;if((t[f]||'')===val)return;t[f]=val;
+  write({op:'merge',path:`audits/${S.auditId}/tasks/${t.id}`,data:{[f]:val,updatedAt:Date.now(),editedBy:S.uid||null}});
+}
+async function setTaskStatus(st){const t=curTask();if(!t)return;t.status=st;render();await write({op:'merge',path:`audits/${S.auditId}/tasks/${t.id}`,data:{status:st,doneAt:st==='Done'?Date.now():null,updatedAt:Date.now(),editedBy:S.uid||null}})}
+function commitTaskInput(el){
+  const t=curTask();const sp=t&&specFor(t);const q=sp&&sp.qs.find(x=>x.id===el.dataset.q);if(!q)return;
+  const v=el.value.trim();if(String((t.answers||{})[q.id]??'')===v)return;saveTaskAnswer(q.id,v);
+}
+async function buildCosts(){
+  if(readOnly())return;const lines=auditCostLines();
+  if(!lines.length){toast('Fill in the scope and rates first.');return}
+  for(const x of S.regs.costing.filter(c=>c.auto==='audit'))await write({op:'delete',path:`audits/${S.auditId}/costing/${x.id}`});
+  const now=Date.now();
+  for(const [i,l] of lines.entries())await write({op:'set',path:`audits/${S.auditId}/costing/cost-aud-${now.toString(36)}-${i}`,data:{...l,phase:'Full audit',auto:'audit',order:i,createdAt:now,updatedAt:now,by:S.uid||null}});
+  toast(`${lines.length} cost lines created on the Costing tab.`);
+}
+function costTotals(){
+  const cs=costSummary();const p=programmeRange();const ro=readOnly();
+  const rows=Object.entries(cs.phases);
+  return `<div class="grid2" style="margin-bottom:16px">
+   <section class="card"><div class="cardtitle">Totals by phase</div>${rows.length?`<table class="tbl" style="min-width:0"><tbody>${rows.map(([k,v])=>`<tr><td><b>${esc(k)}</b>${v.cont||v.oh||v.tax?`<br><span class="muted" style="font-size:13px">Direct ${money(v.sub)} · contingency ${money(v.cont)} · overhead ${money(v.oh)} · tax ${money(v.tax)}</span>`:''}</td><td class="mono" style="text-align:right">${money(v.total)}</td></tr>`).join('')}<tr><td><b>Total</b></td><td class="mono" style="text-align:right"><b>${money(cs.grand)}</b></td></tr></tbody></table>`:'<p class="muted" style="margin:0">No cost lines yet.</p>'}
+    <div class="row" style="margin-top:12px"><button class="btn" type="button" data-act="build-costs" ${ro?'disabled':''}>Create audit cost lines from scope</button>${S.downloads?'<button class="btn primary" type="button" data-act="gen-proposal">Generate proposal (.docx)</button>':''}</div></section>
+   <section class="card"><div class="cardtitle">Whole programme estimate</div>
+    ${calcRow([[money(p.audit),'Audit'],[p.remHi?`${money(p.remLo)} – ${money(p.remHi)}`:'–','Remediation incl. design'],[money(p.mon),'Monitoring'],[p.hi?`${money(p.lo)} – ${money(p.hi)}`:'–','Whole programme']])}
+    <p class="muted" style="margin:10px 0 0;font-size:13px">Remediation and monitoring figures come from the Proposal task “Estimate the full programme”.</p></section></div>`;
+}
+async function genProposal(){
+  toast('Preparing the proposal…');
+  try{await loadScript('vendor/docx.umd.js');await loadScript('proposal.js')}catch(e){toast('Could not load the proposal tools. Check the connection and try again.');return}
+  try{const blob=await window.buildProposal();const d=new Date().toISOString().slice(0,10);save(`CE_Proposal_${slug()}_${d}.docx`,blob);if(blob.photoFailed)toast(`${blob.photoFailed} photo${blob.photoFailed>1?'s':''} could not be loaded and ${blob.photoFailed>1?'were':'was'} left out. Try again with signal.`)}
+  catch(e){console.error(e);toast('Could not build the proposal: '+((e&&e.message)||'unknown error'))}
 }
 
 /* ---------- analysis ---------- */
@@ -896,11 +1299,6 @@ function saveLimit(pid,key,val){
 function limText(r){return r.mn!==null&&r.mx!==null?fmtN(r.mn)+'–'+fmtN(r.mx):r.mx!==null?'≤ '+fmtN(r.mx):r.mn!==null?'≥ '+fmtN(r.mn):'–'}
 function measured(){const fl=pt=>stats(S.regs.flows.filter(f=>f.point===pt).map(f=>num(f.flow)));const fin=fl('WWTP inlet')||fl('Final outlet');const codIn=stats(resultRows('WWTP inlet').map(r=>num(r.r_cod)));return {fin,load:fin&&codIn?fin.avg*codIn.avg/1000:null}}
 function costAmount(r){const q=num(r.qty),rt=num(r.rate);return q!==null&&rt!==null?q*rt:null}
-function costTotals(){
-  const by={};let all=0;S.regs.costing.forEach(r=>{const a=costAmount(r);if(a===null)return;const k=r.phase||'Unassigned';by[k]=(by[k]||0)+a;all+=a});
-  const money=x=>'GHS '+Math.round(x).toLocaleString('en-GB');
-  return `<div class="stats" style="margin-bottom:16px">${Object.entries(by).map(([k,v])=>`<div class="stat"><b>${money(v)}</b><span>${esc(k)}</span></div>`).join('')}<div class="stat"><b>${money(all)}</b><span>Total, all phases</span></div></div>`;
-}
 
 /* ---------- questionnaire ---------- */
 function viewQuestions(){
@@ -1137,9 +1535,11 @@ document.addEventListener('click',async e=>{
   const sec=t.closest('[data-sec]');if(sec){S.section=sec.dataset.sec;if(S.view!=='questions'){go('questions',{section:sec.dataset.sec})}else{render();window.scrollTo({top:0})}return}
   const vg=t.closest('[data-view-go]');if(vg){go(vg.dataset.viewGo);return}
   const tk=t.closest('[data-tick]');if(tk){tickTask(tk.dataset.tick);return}
+  const tsk=t.closest('[data-task]');if(tsk){openTask(tsk.dataset.task);return}
   const pg=t.closest('[data-phase-go]');if(pg){const P=phaseOf(pg.dataset.phaseGo);S.phase=P.id;go(P.views[0][0]);return}
   const sp=t.closest('[data-set-phase]');if(sp){saveAudit('phase',sp.dataset.setPhase);render();return}
   const ed=t.closest('[data-edit]');if(ed){openSheet(ed.dataset.k||S.view,ed.dataset.edit);return}
+  const trm=t.closest('[data-trmphoto]');if(trm){removeTaskPhoto(trm.dataset.trmphoto);return}
   const rm=t.closest('[data-rmphoto]');if(rm&&S.sheet){const f=rm.dataset.field;S.sheet.data[f]=(S.sheet.data[f]||[]).filter(x=>x!==rm.dataset.rmphoto);S.sheet.dirty=true;renderSheetPhotos();return}
   const chip=t.closest('.chips button');
   if(chip&&!chip.disabled){
@@ -1148,6 +1548,7 @@ document.addEventListener('click',async e=>{
     if(g.dataset.kind==='single'){const on=chip.getAttribute('aria-pressed')==='true';g.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed','false'));if(!on)chip.setAttribute('aria-pressed','true');val=on?'':chip.dataset.v}
     else{chip.setAttribute('aria-pressed',String(chip.getAttribute('aria-pressed')!=='true'));val=[...g.querySelectorAll('button[aria-pressed="true"]')].map(b=>b.dataset.v)}
     if(g.closest('#planCard')){S.plan[qid]=val}
+    else if(g.closest('#tqs')){saveTaskAnswer(qid,val)}
     else if(g.closest('#sheetBody')){S.sheet.data[qid]=val;S.sheet.dirty=true}else saveAnswer(qid,val);
     return;
   }
@@ -1161,6 +1562,12 @@ document.addEventListener('click',async e=>{
   if(a==='add')openSheet(S.view,null,S.view==='costing'?{phase:S.phase==='remediation'?'Remediation and retrofit':S.phase==='monitoring'?'Monitoring and aftercare':'Full audit'}:null);
   if(a==='add-task')openSheet('tasks',null,{phase:S.phase,status:'To do',order:999});
   if(a==='load-template')loadTemplate(S.phase);
+  if(a==='build-costs')buildCosts();
+  if(a==='gen-proposal')genProposal();
+  if(a==='task-done'){const t=curTask();const rp=t&&reqProgress(t);if(rp&&rp.n<rp.t){toast('Answer the required questions first.');return}setTaskStatus('Done')}
+  if(a==='task-reopen'||a==='task-progress')setTaskStatus('In progress');
+  if(a==='task-skip')setTaskStatus('Not needed');
+  if(a==='task-delete'){const t=curTask();if(!t)return;if(act.dataset.confirm!=='1'){act.dataset.confirm='1';act.textContent='Tap again to delete';return}S.view='tasks';await write({op:'delete',path:`audits/${S.auditId}/tasks/${t.id}`});render();toast('Task deleted.')}
   if(a==='close'||a==='scrim'){S.sheet=null;renderSheet()}
   if(a==='save')saveSheet();
   if(a==='del'){collectSheet();S.sheet.confirm=true;renderSheet()}
@@ -1180,11 +1587,14 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&S.sheet){S.sheet=nu
 document.addEventListener('change',e=>{
   const t=e.target;
   if(t.dataset.upload){upload(t.dataset.upload,[...t.files]);t.value='';return}
+  if(t.dataset.tupload){uploadTaskPhotos([...t.files]);t.value='';return}
   if(t.id==='flt-a'){S.filters[S.view].a=t.value;render();return}
   if(['plan-n','lab-which','lab-start'].includes(t.id)){S.plan[t.id]=t.value;return}
   if(S.sheet&&S.sheet.k==='samples'&&!S.sheet.id&&['point','collected_date'].includes(t.dataset.q)){collectSheet();S.sheet.data.code=nextCode(S.sheet.data.point,S.sheet.data.collected_date);const cv=$('#codeVal');if(cv)cv.textContent=S.sheet.data.code}
   if(t.dataset.audit){saveAudit(t.dataset.audit,t.value);return}
   if(t.dataset.limit){saveLimit(t.dataset.limit,t.dataset.lk,t.value);return}
+  if(t.dataset.tf){saveTaskField(t.dataset.tf,t.value.trim());return}
+  if(t.dataset.q&&t.closest('#tqs')){clearTimeout(S.timers['t:'+t.dataset.q]);delete S.timers['t:'+t.dataset.q];commitTaskInput(t);return}
   if(S.sheet&&t.closest('#sheetBody')&&t.dataset.q){const fd=REGS[S.sheet.k].fields.find(x=>x.id===t.dataset.q);if(fd&&fd.rerender){collectSheet();renderSheet();return}}
   if(t.dataset.q&&!t.closest('#sheetBody')&&t.closest('#qs')){clearTimeout(S.timers['q:'+t.dataset.q]);delete S.timers['q:'+t.dataset.q];commitInput(t)}
   if(t.closest('#sheetBody'))S.sheet&&(S.sheet.dirty=true);
@@ -1192,6 +1602,7 @@ document.addEventListener('change',e=>{
 document.addEventListener('input',e=>{
   const t=e.target;
   if(t.id==='flt-q'){S.filters[S.view].q=t.value;const pos=t.selectionStart;render();const n=$('#flt-q');if(n){n.focus();try{n.setSelectionRange(pos,pos)}catch(_){}}return}
+  if(t.dataset.q&&t.closest('#tqs')&&t.tagName!=='SELECT'){const key='t:'+t.dataset.q;clearTimeout(S.timers[key]);S.timers[key]=setTimeout(()=>{delete S.timers[key];commitTaskInput(t)},1200);return}
   if(t.dataset.q&&t.closest('#qs')&&t.tagName!=='SELECT'){const key='q:'+t.dataset.q;clearTimeout(S.timers[key]);S.timers[key]=setTimeout(()=>{delete S.timers[key];commitInput(t)},1400)}
 });
 function commitInput(t){

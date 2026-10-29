@@ -1,6 +1,20 @@
 # Cleanearth Site Audit
 
-Field app for Cleanearth water and wastewater site audits. It covers the questionnaire, equipment, chemicals, product lines, field readings, samples (with sample codes) and observations, with photos. Data is shared live between the team through a free Supabase project, and the app keeps working offline on site.
+Field app for Cleanearth water and wastewater site audits.
+
+Each client project runs through five phases, each with a standard checklist the team can edit:
+
+| Phase | What it holds |
+| --- | --- |
+| 1. Pre-audit visit | Questionnaire, equipment, chemicals, product lines, field readings, observations |
+| 2. Proposal | Checklist and costing table (totals by phase) |
+| 3. Full audit | Samples and sample codes, lab results, flow log, and an analysis of results against discharge limits, removal efficiencies and measured loads |
+| 4. Remediation and retrofit | Options register (cost, priority, status) and costing |
+| 5. Monitoring and aftercare | Ongoing results, field readings and samples |
+
+The Overview shows the current phase, checklist progress and every finding, including limit exceedances and measured overloads.
+
+Data is shared live between the team through a free Supabase project, and the app keeps working offline on site.
 
 - **App:** this repository, served by GitHub Pages at `https://cscleanearth-lang.github.io/site-audit/`
 - **Data and photos:** your Supabase project (not stored in this repository)

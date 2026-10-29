@@ -54,6 +54,10 @@ nav.tabs{display:flex;gap:2px;overflow-x:auto;scrollbar-width:none}
 nav.tabs::-webkit-scrollbar{display:none}
 nav.tabs button{background:none;border:0;padding:10px 12px;border-bottom:2px solid transparent;color:var(--muted);font-weight:500;white-space:nowrap;cursor:pointer}
 nav.tabs button[aria-current="page"]{color:var(--ink);border-bottom-color:var(--accent)}
+nav.tabs.sub{border-top:1px solid var(--line)}
+nav.tabs.sub button{font-size:14px;padding:8px 12px}
+nav.tabs .pnum{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;background:var(--sunken);font-size:11px;font-family:var(--font-mono);margin-right:6px;color:var(--muted)}
+nav.tabs button[aria-current="page"] .pnum{background:var(--accent);color:var(--accent-ink)}
 nav.tabs .count{font-family:var(--font-mono);font-size:11px;margin-left:5px;color:var(--muted)}
 
 main{padding-block:20px 80px}
@@ -170,6 +174,31 @@ textarea.inp{min-height:80px;resize:vertical}
 .codebox{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:12px 14px;border-radius:8px;background:var(--accent-soft)}
 .codebox span{font-size:28px;letter-spacing:.02em;font-weight:500;overflow-wrap:anywhere}
 .item .t.code{font-family:var(--font-mono);font-size:17px;font-weight:500}
+.btn.small{min-height:30px;padding:4px 10px;font-size:13px}
+/* phase tracker */
+.phases{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px}
+.ph{display:flex;flex-direction:column;gap:8px;padding:12px;border-radius:8px;background:var(--sunken);border:1px solid transparent;min-width:0}
+.ph.current{border-color:var(--accent);background:var(--accent-soft)}
+.phbtn{display:flex;gap:10px;align-items:flex-start;background:none;border:0;padding:0;text-align:left;cursor:pointer;min-width:0}
+.pdot{flex:none;display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:var(--surface);border:1px solid var(--line);font-family:var(--font-mono);font-size:12px;font-weight:600}
+.ph.current .pdot{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.ph.done .pdot{background:var(--good);border-color:var(--good);color:#fff}
+.pt{display:flex;flex-direction:column;gap:3px;min-width:0;flex:1}
+.pt b{font-size:14px}.pt .muted{font-size:12px}
+.ph .meter{margin-top:4px}
+.ph>.btn,.ph>.pill{align-self:flex-start}
+/* checklist */
+.tasks{list-style:none;margin:0;padding:0;background:var(--surface);border:1px solid var(--line);border-radius:var(--r)}
+.task{display:flex;align-items:center;gap:12px;padding:10px 14px;border-top:1px solid var(--line)}
+.task:first-child{border-top:0}
+.tick{flex:none;width:26px;height:26px;border-radius:6px;border:2px solid var(--line);background:var(--surface);cursor:pointer;display:grid;place-items:center;font-weight:700;color:var(--accent-ink)}
+.tick[aria-pressed="true"]{background:var(--good);border-color:var(--good);color:#fff}
+.tbody{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;background:none;border:0;padding:2px 0;text-align:left;cursor:pointer}
+.tt{overflow-wrap:anywhere}
+.tbody .m{font-size:13px;color:var(--muted)}
+.task.done .tt,.task.skip .tt{color:var(--muted);text-decoration:line-through}
+.late{color:var(--bad);font-weight:500}
+.tbl.limits .inp{min-height:34px;padding:6px 8px;max-width:130px}
 .confirm{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:14px}
 
 /* audits list */
@@ -193,10 +222,11 @@ dl.kv dd{margin:0;overflow-wrap:anywhere}
         <span class="auditname" id="auditName">Loading audit…</span>
       </div>
       <span class="status" id="saveStatus">Connecting…</span>
-      <button class="btn" id="switchBtn" type="button">All audits</button>
+      <button class="btn" id="switchBtn" type="button">All projects</button>
       <button class="btn ghost" id="acctBtn" type="button" data-act="signout" hidden>Sign out</button>
     </div>
-    <nav class="tabs" id="tabs" aria-label="Sections"></nav>
+    <nav class="tabs" id="tabs" aria-label="Phases"></nav>
+    <nav class="tabs sub" id="subtabs" aria-label="Sections" hidden></nav>
   </div>
 </header>
 
@@ -214,6 +244,23 @@ const EQUIP_CATS=['Pump','Blower / aerator','DAF unit','Dosing pump / skid','Che
 const YN=['Yes','No','Unknown'];
 const POINTS=[['Raw water','RW'],['Treated water','TW'],['Production drain','PD'],['CIP discharge','CIP'],['WWTP inlet','IN'],['After equalisation','EQ'],['After DAF','DAF'],['Biological reactor','BR'],['Clarifier outlet','CO'],['Final outlet','FO'],['Receiving water','RCV'],['Other','OT']];
 const POINT_NAMES=POINTS.map(p=>p[0]);const POINT_CODE=Object.fromEntries(POINTS);
+const PARAMS=[{id:'ph',label:'pH',unit:''},{id:'temp',label:'Temperature',unit:'°C'},{id:'bod',label:'BOD',unit:'mg/L'},{id:'cod',label:'COD',unit:'mg/L'},{id:'tss',label:'TSS',unit:'mg/L'},{id:'tds',label:'TDS',unit:'mg/L'},{id:'fog',label:'FOG',unit:'mg/L'},{id:'turb',label:'Turbidity',unit:'NTU'},{id:'colour',label:'Colour',unit:'TCU'},{id:'nh3',label:'Ammonia',unit:'mg/L N'},{id:'no3',label:'Nitrate',unit:'mg/L N'},{id:'tn',label:'Total nitrogen',unit:'mg/L'},{id:'tp',label:'Total phosphorus',unit:'mg/L'},{id:'fc',label:'Faecal coliforms',unit:'CFU/100 mL'},{id:'ecoli',label:'E. coli',unit:'CFU/100 mL'},{id:'ec',label:'Conductivity',unit:'µS/cm'}];
+const PHASES=[
+ {id:'pre',label:'Pre-audit visit',short:'Pre-audit',intro:'Scoping visit: understand the site, find likely causes of non-compliance and gather what is needed to cost the audit.',views:[['questions','Questionnaire'],['equipment'],['chemicals'],['products'],['measurements'],['observations'],['tasks','Checklist']]},
+ {id:'proposal',label:'Proposal',short:'Proposal',intro:'Scope and price the full audit, then win the client’s approval.',views:[['tasks','Checklist'],['costing']]},
+ {id:'audit',label:'Full audit',short:'Full audit',intro:'Measure flows and loads, sample every stage, test the process and find the root causes.',views:[['tasks','Checklist'],['samples'],['results'],['flows'],['analysis','Analysis']]},
+ {id:'remediation',label:'Remediation and retrofit',short:'Remediation',intro:'Choose, design and deliver the fixes, from quick operational wins to new treatment units.',views:[['tasks','Checklist'],['options'],['costing']]},
+ {id:'monitoring',label:'Monitoring and aftercare',short:'Monitoring',intro:'Prove the fixes work and keep the plant compliant.',views:[['tasks','Checklist'],['results'],['measurements'],['samples']]}];
+const TEMPLATES={
+ pre:['Confirm visit date, attendees and client contacts','Send the information request list to the client','Review documents received (permit, past results, drawings, O&M manual)','Walk the site from water intake to final discharge','Complete every questionnaire section','Record all equipment with nameplate photos','Record all chemicals, doses and storage','Take spot readings (pH, temperature, DO, conductivity)','Close-out meeting: agree next steps and outstanding data','Export the workbook to SharePoint'],
+ proposal:['Define audit scope and sampling points','Agree monitoring duration (normally 5–7 days, including CIP and a weekend)','Set the parameter list for each sampling point','Get a quotation from an accredited laboratory','Confirm flow metering (existing meters or hired meters)','Estimate staff days, transport and equipment hire','Complete the costing table','Internal review of scope and price','Submit the proposal to the client','Client approval or purchase order received','Contract signed; site access, PPE and induction confirmed'],
+ audit:['Mobilise: induction, permits, equipment calibrated','Install or verify flow meters at inlet and outlet','Plan samples and generate sample codes','Run the composite sampling campaign at every stage','Take grab samples (pH, temperature, FOG, microbiology)','Sample individual sources (CIP rinses, product lines, drains)','Record daily field readings','Process tests: SV30/SVI, microscopy, DAF performance','Jar tests for coagulant and flocculant doses','Water balance from intake to discharge','Asset condition assessment for every unit','Sludge sampling and quantities','Operator interviews and review of logs','Chain of custody completed and samples delivered to the lab','Lab results received, checked and entered','Analysis: loads, removal efficiencies and limit exceedances','Root-cause analysis for each failing parameter','Draft the audit report and review internally','Present findings to the client'],
+ remediation:['List and screen remediation options','Estimate capital and running cost for each option','Agree preferred options with the client','Prepare the remediation proposal and costing','Concept and detailed design','Procurement and supplier selection','Installation and civil works','Commissioning and performance testing','Operator training and updated SOPs','Handover documents (drawings, O&M manual, warranties)'],
+ monitoring:['Agree the monitoring schedule and parameters','Monthly compliance sampling','Review results against limits each month','Quarterly review meeting with the client','Maintenance and service visits','Annual audit refresher']};
+const phaseOf=id=>PHASES.find(p=>p.id===id);
+const sampleCodes=()=>S.regs.samples.map(x=>x.code).filter(Boolean).sort();
+const sampleByCode=c=>S.regs.samples.find(x=>x.code===c);
+function resultParams(d){const sm=sampleByCode(d.sample);const ps=sm&&sm.params&&sm.params.length?sm.params:null;return ps?PARAMS.filter(p=>ps.includes(p.label)):PARAMS}
 const defaultParams=p=>['Raw water','Treated water'].includes(p)?['pH','Turbidity','TDS','E. coli']:['pH','BOD','COD','TSS','FOG'];
 
 const SECTIONS=[
@@ -428,6 +475,46 @@ const REGS={
   {id:'lab',label:'Laboratory',type:'text'},
   {id:'notes',label:'Notes (field readings, colour, odour)',type:'textarea'},
   {id:'photos',label:'Photos',type:'photos'}]},
+ tasks:{label:'Checklist',one:'task',intro:'',fields:[
+  {id:'title',label:'Task',type:'text'},
+  {id:'phase',label:'Phase',type:'hidden'},
+  {id:'status',label:'Status',type:'chips',options:['To do','In progress','Done','Not needed']},
+  {id:'owner',label:'Owner',type:'text',ph:'e.g. Azeez'},
+  {id:'due',label:'Due date',type:'date'},
+  {id:'notes',label:'Notes',type:'textarea'}]},
+ costing:{label:'Costing',one:'cost line',intro:'Price the work line by line. Totals by phase update as you go.',fields:[
+  {id:'item',label:'Item',type:'text',ph:'e.g. COD analysis, 24 samples'},
+  {id:'phase',label:'Phase',type:'chips',options:['Full audit','Remediation and retrofit','Monitoring and aftercare']},
+  {id:'category',label:'Category',type:'select',options:['Staff time','Laboratory analysis','Equipment hire','Transport and logistics','Materials and consumables','Equipment supply','Civil and installation works','Subcontractor','Other']},
+  {id:'qty',label:'Quantity',type:'number'},
+  {id:'unit',label:'Unit',type:'text',ph:'e.g. days, samples, units'},
+  {id:'rate',label:'Rate per unit',type:'number',unit:'GHS'},
+  {id:'notes',label:'Notes',type:'textarea'}]},
+ results:{label:'Lab results',one:'lab result',intro:'Enter results per sample code. Final-outlet results are checked against the discharge limits on the Analysis tab.',fields:[
+  {id:'sample',label:'Sample code',type:'select',options:()=>sampleCodes(),rerender:true,hint:'Only the analyses requested for this sample are shown. Add more on the sample itself.'},
+  {id:'lab',label:'Laboratory',type:'text'},
+  {id:'received',label:'Date results received',type:'date'},
+  {id:'lab_ref',label:'Lab report reference',type:'text',mono:true},
+  ...PARAMS.map(pr=>({id:'r_'+pr.id,label:pr.label,type:'number',unit:pr.unit||undefined,showIf:d=>!!d.sample&&resultParams(d).some(x=>x.id===pr.id)})),
+  {id:'notes',label:'Notes',type:'textarea'},
+  {id:'photos',label:'Photo of the lab certificate',type:'photos'}]},
+ flows:{label:'Flow log',one:'flow reading',intro:'Daily flows during monitoring. Averages are compared with the design flow on the Analysis tab.',fields:[
+  {id:'date',label:'Date',type:'date'},
+  {id:'point',label:'Measuring point',type:'select',options:POINT_NAMES},
+  {id:'flow',label:'Flow',type:'number',unit:'m³/day'},
+  {id:'method',label:'How it was measured',type:'chips',options:['Flow meter','Meter reading difference','Timed bucket','Estimate']},
+  {id:'notes',label:'Notes',type:'textarea'}]},
+ options:{label:'Options',one:'option',intro:'Every possible fix, so they can be compared on cost, benefit and priority.',fields:[
+  {id:'title',label:'Option',type:'text',ph:'e.g. Equalise CIP discharges over 8 hours'},
+  {id:'category',label:'Type',type:'select',options:['Source control','Operational change','Chemical change','Equipment repair','Process upgrade','New treatment unit','Water reuse','Sludge management','Monitoring and control']},
+  {id:'params',label:'Parameters it addresses',type:'multi',options:PARAMS.map(x=>x.label)},
+  {id:'description',label:'Description',type:'textarea'},
+  {id:'capex',label:'Capital cost',type:'number',unit:'GHS'},
+  {id:'opex',label:'Change in running cost',type:'number',unit:'GHS/year',hint:'Negative if it saves money.'},
+  {id:'benefit',label:'Expected improvement',type:'textarea'},
+  {id:'priority',label:'Priority',type:'chips',options:['High','Medium','Low']},
+  {id:'status',label:'Status',type:'chips',options:['Proposed','Agreed','In design','Implemented','Rejected']},
+  {id:'photos',label:'Photos or sketches',type:'photos'}]},
  observations:{label:'Observations',one:'observation',intro:'Anything worth reporting that does not fit elsewhere.',fields:[
   {id:'title',label:'Observation',type:'text',ph:'e.g. Caustic dumped straight to drain'},
   {id:'area',label:'Process area',type:'select',options:AREAS},
@@ -504,7 +591,7 @@ window.addEventListener('online',flush);
 /* ---------- capability start-up ---------- */
 async function boot(){
   S.outbox=ls.get('ce-outbox',[]);
-  S.view=ls.get('ce-view','overview');
+  S.view=ls.get('ce-view','overview');S.phase=ls.get('ce-phase','pre');S.lastView={};
   render();
   if(!window.CE){S.dbChecked=true;S.auth={state:'error',message:'The app files did not load completely. Reload the page.'};render();return}
   S.auth=await CE.init();S.dbChecked=true;
@@ -568,34 +655,49 @@ function who(id){if(!id)return'';if(id===S.uid)return'you';return S.names[id]||'
 function when(ts){if(!ts)return'';const d=new Date(ts);return d.toLocaleDateString('en-GB',{day:'numeric',month:'short'})+' '+d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}
 
 /* ---------- header & tabs ---------- */
-const VIEWS=[['overview','Overview'],['questions','Questionnaire'],...REG_KEYS.map(k=>[k,REGS[k].label])];
+function viewLabel(k,l){return l||(REGS[k]&&REGS[k].label)||k}
+function phaseTasks(ph){return S.regs.tasks.filter(t=>t.phase===ph&&t.status!=='Not needed')}
+function phaseProgress(ph){const t=phaseTasks(ph);return {n:t.filter(x=>x.status==='Done').length,t:t.length}}
+function countFor(k){if(k==='tasks'){const p=phaseProgress(S.phase);return p.t?p.n+'/'+p.t:''}if(k==='questions'||k==='analysis')return '';return REGS[k]?S.regs[k].length:''}
+function viewPhase(v){if(phaseOf(S.phase)&&phaseOf(S.phase).views.some(x=>x[0]===v))return S.phase;const p=PHASES.find(p=>p.views.some(x=>x[0]===v));return p?p.id:S.phase}
 function renderHeader(){
   const a=S.audit;
-  $('#auditName').textContent=a?[a.client,a.site].filter(Boolean).join(' – ')||'Untitled audit':(S.auditsLoaded?'No audit selected':(S.db?'Loading audit…':'Cleanearth site audit'));
+  $('#auditName').textContent=a?[a.client,a.site].filter(Boolean).join(' – ')||'Untitled project':(S.auditsLoaded?'No project selected':(S.db?'Loading project…':'Cleanearth site audit'));
 }
 function renderTabs(){
-  $('#tabs').innerHTML=VIEWS.map(([k,l])=>{
-    const c=REGS[k]?`<span class="count">${S.regs[k].length}</span>`:'';
-    return `<button type="button" data-view="${k}" ${S.view===k?'aria-current="page"':''}>${l}${c}</button>`}).join('');
+  const cur=(S.view==='overview'||S.view==='audits')?'overview':S.phase;
+  const top=[['overview','Overview'],...PHASES.map(p=>[p.id,p.short])];
+  $('#tabs').innerHTML=top.map(([k,l],i)=>`<button type="button" data-phase="${k}" ${cur===k?'aria-current="page"':''}>${i?`<span class="pnum">${i}</span>`:''}${esc(l)}</button>`).join('');
+  const sub=$('#subtabs');const P=phaseOf(cur);
+  if(!P||!S.audit){sub.hidden=true;sub.innerHTML='';return}
+  sub.hidden=false;
+  sub.innerHTML=P.views.map(([k,l])=>{const c=countFor(k);return `<button type="button" data-view="${k}" ${S.view===k?'aria-current="page"':''}>${esc(viewLabel(k,l))}${c!==''?`<span class="count">${c}</span>`:''}</button>`}).join('');
 }
-$('#tabs').addEventListener('click',e=>{const b=e.target.closest('button[data-view]');if(!b)return;go(b.dataset.view)});
+$('#tabs').addEventListener('click',e=>{const b=e.target.closest('button[data-phase]');if(!b)return;const k=b.dataset.phase;
+  if(k==='overview'){go('overview');return}
+  S.phase=k;const last=(S.lastView||{})[k];const P=phaseOf(k);go(last&&P.views.some(x=>x[0]===last)?last:P.views[0][0])});
+$('#subtabs').addEventListener('click',e=>{const b=e.target.closest('button[data-view]');if(!b)return;go(b.dataset.view)});
 $('#switchBtn').addEventListener('click',()=>go('audits'));
 $('#saveStatus').addEventListener('click',()=>{if(S.outbox.length)flush()});
-function go(v,opts={}){S.view=v;if(v!=='audits')ls.set('ce-view',v);if(opts.section!==undefined)S.section=opts.section;render();window.scrollTo({top:0})}
+function go(v,opts={}){
+  if(v!=='overview'&&v!=='audits'){S.phase=viewPhase(v);S.lastView=S.lastView||{};S.lastView[S.phase]=v;ls.set('ce-phase',S.phase)}
+  S.view=v;if(v!=='audits')ls.set('ce-view',v);if(opts.section!==undefined)S.section=opts.section;render();window.scrollTo({top:0})}
 
 function render(){
   renderHeader();renderTabs();setStatus();
   const m=$('#main');
   let banner='';
-  const gate=S.dbChecked&&!S.db;$('#tabs').hidden=gate;$('#switchBtn').hidden=gate;
+  const gate=S.dbChecked&&!S.db;$('#tabs').hidden=gate;$('#switchBtn').hidden=gate;if(gate)$('#subtabs').hidden=true;
   if(gate){m.innerHTML=viewAuth();return}
-  if(S.canWrite===false)banner=`<div class="banner info">You can view this audit but not edit it. Ask the app manager to check your account.</div>`;
+  if(S.canWrite===false)banner=`<div class="banner info">You can view this project but not edit it. Ask the app manager to check your account.</div>`;
   if(S.outbox.length)banner+=`<div class="banner">${S.outbox.length} change${S.outbox.length>1?'s are':' is'} stored on this device and not yet saved. They will be sent when the connection returns. <button class="btn ghost" type="button" data-act="flush">Retry now</button></div>`;
   if(S.view==='audits'){m.innerHTML=banner+viewAudits();return}
-  if(!S.audit){m.innerHTML=banner+(S.auditsLoaded?`<div class="empty"><b>No audit yet</b>Create the first audit to start recording.<div style="margin-top:12px"><button class="btn primary" type="button" data-act="audits">Create an audit</button></div></div>`:`<div class="empty"><b>Loading audit data</b>Entries from the whole team appear here.</div>`);return}
+  if(!S.audit){m.innerHTML=banner+(S.auditsLoaded?`<div class="empty"><b>No project yet</b>Create the first client project to start recording.<div style="margin-top:12px"><button class="btn primary" type="button" data-act="audits">Create a project</button></div></div>`:`<div class="empty"><b>Loading projects</b>Entries from the whole team appear here.</div>`);return}
   if(S.view==='overview')m.innerHTML=banner+viewOverview();
   else if(S.view==='questions'){m.innerHTML=banner+viewQuestions();bindForm()}
-  else if(REGS[S.view])m.innerHTML=banner+viewRegister(S.view);
+  else if(S.view==='tasks')m.innerHTML=banner+phaseHead()+viewTasks(S.phase);
+  else if(S.view==='analysis')m.innerHTML=banner+phaseHead()+viewAnalysis();
+  else if(REGS[S.view])m.innerHTML=banner+phaseHead()+viewRegister(S.view);
   const ids=[];REG_KEYS.forEach(k=>S.regs[k].forEach(r=>ids.push(r.by)));Object.values(S.sections).forEach(s=>ids.push(s.updatedBy));
   const missing=[...new Set(ids.filter(i=>i&&!(i in S.names)))];
   if(missing.length&&S.user){missing.forEach(i=>S.names[i]='');names(missing).then(()=>{if(REGS[S.view])render()})}
@@ -604,14 +706,14 @@ function render(){
 /* ---------- audits list ---------- */
 function viewAudits(){
   const list=S.audits.slice().sort((a,b)=>(b.visitDate||'').localeCompare(a.visitDate||''));
-  return `<div class="sechead"><h2>Audits</h2></div>
+  return `<div class="sechead"><h2>Projects</h2></div>
   <div class="grid2">
-   <div class="stack">${list.length?`<div class="audits">${list.map(a=>`<button class="item" type="button" data-act="pick" data-id="${esc(a.id)}"><span><span class="t">${esc(a.client||'Untitled')}</span><br><span class="m">${esc(a.site||'')}${a.visitDate?' · '+esc(fmtDate(a.visitDate)):''}</span></span>${a.id===S.auditId?'<span class="pill info">Open</span>':`<span class="pill">${esc(a.status||'Planned')}</span>`}</button>`).join('')}</div>`:`<div class="empty"><b>No audits yet</b>Create one with the form.</div>`}</div>
-   <form class="card" id="newAudit"><div class="cardtitle">New audit</div>
+   <div class="stack">${list.length?`<div class="audits">${list.map(a=>`<button class="item" type="button" data-act="pick" data-id="${esc(a.id)}"><span><span class="t">${esc(a.client||'Untitled')}</span><br><span class="m">${esc(a.site||'')}${a.visitDate?' · '+esc(fmtDate(a.visitDate)):''}</span></span>${a.id===S.auditId?'<span class="pill info">Open</span>':`<span class="pill">${esc((phaseOf(a.phase||'pre')||PHASES[0]).short)}</span>`}</button>`).join('')}</div>`:`<div class="empty"><b>No projects yet</b>Create one with the form.</div>`}</div>
+   <form class="card" id="newAudit"><div class="cardtitle">New client project</div>
      <div class="f"><label class="ql" for="na-client">Client</label><input class="inp" id="na-client" required placeholder="e.g. Danone Fan Milk"></div>
      <div class="f"><label class="ql" for="na-site">Site</label><input class="inp" id="na-site" placeholder="e.g. Production plant, Accra"></div>
-     <div class="f"><label class="ql" for="na-date">Visit date</label><input class="inp" id="na-date" type="date"></div>
-     <div class="row" style="margin-top:8px"><button class="btn primary" type="submit" ${readOnly()?'disabled':''}>Create audit</button></div>
+     <div class="f"><label class="ql" for="na-date">Pre-audit visit date</label><input class="inp" id="na-date" type="date"></div>
+     <div class="row" style="margin-top:8px"><button class="btn primary" type="submit" ${readOnly()?'disabled':''}>Create project</button></div>
    </form>
   </div>`;
 }
@@ -621,8 +723,8 @@ document.addEventListener('submit',async e=>{
   const client=$('#na-client').value.trim();if(!client)return;
   const id=(client+'-'+($('#na-date').value||YEAR)).toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,60)+'-'+Math.random().toString(36).slice(2,6);
   ls.set('ce-audit',id);
-  const ok=await write({op:'set',path:'audits/'+id,data:{client,site:$('#na-site').value.trim(),visitDate:$('#na-date').value,status:'Planned',team:'',createdAt:Date.now(),by:S.uid||null}});
-  if(ok){S.view='overview';if(S.audits.find(a=>a.id===id))selectAudit(id);else{S.auditId=null;render()}toast('Audit created.')}
+  const ok=await write({op:'set',path:'audits/'+id,data:{client,site:$('#na-site').value.trim(),visitDate:$('#na-date').value,status:'Planned',phase:'pre',team:'',createdAt:Date.now(),by:S.uid||null}});
+  if(ok){S.view='overview';if(S.audits.find(a=>a.id===id))selectAudit(id);else{S.auditId=null;render()}toast('Project created.')}
 });
 
 /* ---------- overview ---------- */
@@ -666,6 +768,10 @@ function flags(){
     if(p!==null&&(p<6||p>9))F.push(['bad',`pH ${p} at ${loc.toLowerCase()}${m.time?' ('+m.time+')':''}.`]);
     if(t!==null&&t>35)F.push(['warn',`Temperature ${t} °C at ${loc.toLowerCase()}.`])});
   S.regs.observations.filter(o=>o.severity==='Critical').forEach(o=>F.push(['bad',o.title||'Critical observation']));
+  {const M=measured(),df=num(A('wwtp','design_flow')),dc=num(A('wwtp','design_cod'));
+   if(M.fin&&df&&M.fin.avg>df)F.push(['bad',`Measured flow averages ${fmtN(M.fin.avg)} m³/day over ${M.fin.n} day${M.fin.n>1?'s':''}: ${Math.round(M.fin.avg/df*100)}% of the ${fmtN(df)} m³/day design.`]);
+   if(M.load!==null&&dc&&M.load>dc)F.push(['bad',`Measured COD load at the inlet is ${fmtN(M.load)} kg/day: ${Math.round(M.load/dc*100)}% of the ${fmtN(dc)} kg/day design.`]);}
+  analysisRows().filter(r=>r.status==='Exceeds').forEach(r=>F.push(['bad',`${r.pr.label} at the final outlet breaks the limit in ${r.over} of ${r.so.n} samples (measured ${r.so.n>1?fmtN(r.so.min)+'–'+fmtN(r.so.max):fmtN(r.so.max)}${r.pr.unit?' '+r.pr.unit:''}; limit ${limText(r)}).`]));
   return F.sort((a,b)=>(a[0]==='bad'?0:1)-(b[0]==='bad'?0:1));
 }
 function viewOverview(){
@@ -680,8 +786,9 @@ function viewOverview(){
   const ro=readOnly();
   const vf=(id,label,type='text',ph='')=>`<div class="f"><label class="ql" for="au-${id}">${label}</label>${type==='textarea'?`<textarea class="inp" id="au-${id}" data-audit="${id}" ${ro?'disabled':''} placeholder="${esc(ph)}">${esc(a[id]||'')}</textarea>`:`<input class="inp" id="au-${id}" data-audit="${id}" type="${type}" value="${esc(a[id]||'')}" ${ro?'disabled':''} placeholder="${esc(ph)}">`}</div>`;
   return `
-  <div class="sechead"><div><span class="eyebrow">${a.visitDate?esc(fmtDate(a.visitDate)):'Visit date not set'}</span><h2>${esc(a.client||'Untitled audit')}</h2></div>
+  <div class="sechead"><div><span class="eyebrow">${a.visitDate?esc(fmtDate(a.visitDate)):'Visit date not set'}</span><h2>${esc(a.client||'Untitled project')}</h2></div>
     </div>
+  ${phaseTracker()}
   <div class="stats" style="margin-bottom:16px">
     <div class="stat"><b>${pct}%</b><span>Questionnaire answered (${totals.n} of ${totals.t})</span></div>
     <div class="stat"><b>${eq.length}</b><span>Equipment items recorded</span></div>
@@ -704,11 +811,95 @@ function viewOverview(){
     <section class="card"><div class="cardtitle">Questionnaire progress</div>
      <div class="prog">${SECTIONS.map(s=>{const p=secProgress(s);return `<button type="button" data-sec="${s.id}"><span>${esc(s.title)}</span><span class="frac">${p.n}/${p.t}</span><span class="meter"><i class="${p.n===p.t?'full':''}" style="width:${p.t?p.n/p.t*100:0}%"></i></span></button>`}).join('')}</div>
     </section>
-    <section class="card"><div class="cardtitle">Visit details</div>
-     ${vf('client','Client')}${vf('site','Site')}${vf('sector','Industry / sector','text','e.g. Dairy, brewery, textiles')}${vf('code','Client code for sample codes','text','e.g. DFM (defaults to the client’s initials)')}${vf('visitDate','Visit date','date')}${vf('team','Cleanearth team','text','Names and roles')}${vf('status','Status','text','Planned, In progress, Complete')}${vf('purpose','Purpose of visit','textarea')}
+    <section class="card"><div class="cardtitle">Project details</div>
+     ${vf('client','Client')}${vf('site','Site')}${vf('sector','Industry / sector','text','e.g. Dairy, brewery, textiles')}${vf('code','Client code for sample codes','text','e.g. DFM (defaults to the client’s initials)')}${vf('visitDate','Pre-audit visit date','date')}${vf('team','Cleanearth team','text','Names and roles')}${vf('status','Status','text','Planned, In progress, Complete')}${vf('purpose','Purpose of visit','textarea')}
     </section>
    </div>
   </div>`;
+}
+
+/* ---------- phases ---------- */
+function phaseHead(){const P=phaseOf(S.phase);if(!P)return '';const i=PHASES.indexOf(P)+1;return `<p class="eyebrow" style="margin:0 0 4px">Phase ${i} of ${PHASES.length} · ${esc(P.label)}</p>`}
+function phaseTracker(){
+  const cur=(S.audit&&S.audit.phase)||'pre';const ci=PHASES.findIndex(p=>p.id===cur);const ro=readOnly();
+  return `<section class="card" style="margin-bottom:16px"><div class="cardtitle">Project phases</div><ol class="phases">${PHASES.map((p,i)=>{const pr=phaseProgress(p.id);const st=i<ci?'done':i===ci?'current':'next';
+    return `<li class="ph ${st}"><button type="button" class="phbtn" data-phase-go="${p.id}"><span class="pdot">${st==='done'?'✓':i+1}</span><span class="pt"><b>${esc(p.label)}</b><span class="muted">${pr.t?`${pr.n} of ${pr.t} tasks done`:'Checklist not started'}</span>${pr.t?`<span class="meter"><i class="${pr.n===pr.t?'full':''}" style="width:${pr.n/pr.t*100}%"></i></span>`:''}</span></button>
+    ${st!=='current'&&!ro?`<button type="button" class="btn ghost small" data-set-phase="${p.id}">Make current</button>`:st==='current'?'<span class="pill info">Current</span>':''}</li>`}).join('')}</ol></section>`;
+}
+function viewTasks(ph){
+  const P=phaseOf(ph);const rows=S.regs.tasks.filter(t=>t.phase===ph).sort((a,b)=>(a.order??999)-(b.order??999)||(a.createdAt||0)-(b.createdAt||0));
+  const pr=phaseProgress(ph);const ro=readOnly();const missing=TEMPLATES[ph].filter(t=>!rows.some(r=>r.title===t)).length;
+  return `<div class="sechead"><div><h2>${esc(P.label)} checklist</h2><p class="intro" style="margin:4px 0 0">${esc(P.intro)}</p></div>
+   <div class="row">${missing&&!ro?`<button class="btn" type="button" data-act="load-template">${rows.length?`Add ${missing} standard task${missing>1?'s':''}`:'Load standard checklist'}</button>`:''}<button class="btn primary" type="button" data-act="add-task" ${ro?'disabled':''}>Add task</button></div></div>
+   ${pr.t?`<div class="card" style="margin-bottom:12px;padding:12px 16px"><div class="row" style="justify-content:space-between"><b>${pr.n} of ${pr.t} done</b><span class="frac">${Math.round(pr.n/pr.t*100)}%</span></div><div class="meter" style="margin-top:8px"><i class="${pr.n===pr.t?'full':''}" style="width:${pr.n/pr.t*100}%"></i></div></div>`:''}
+   ${rows.length?`<ul class="tasks">${rows.map(r=>{const st=r.status||'To do';const overdue=r.due&&st!=='Done'&&st!=='Not needed'&&r.due<new Date().toISOString().slice(0,10);
+     return `<li class="task ${st==='Done'?'done':''} ${st==='Not needed'?'skip':''}"><button type="button" class="tick" data-tick="${esc(r.id)}" aria-pressed="${st==='Done'}" aria-label="Mark ${esc(r.title||'task')} done" ${ro?'disabled':''}>${st==='Done'?'✓':''}</button>
+      <button type="button" class="tbody" data-edit="${esc(r.id)}" data-k="tasks"><span class="tt">${esc(r.title||'Untitled task')}</span><span class="m">${[r.owner&&esc(r.owner),r.due&&`<span class="${overdue?'late':''}">Due ${esc(fmtDate(r.due))}</span>`].filter(Boolean).join(' · ')}</span></button>
+      ${st==='In progress'||st==='Not needed'?`<span class="pill ${st==='In progress'?'info':''}">${esc(st)}</span>`:''}</li>`}).join('')}</ul>`
+   :`<div class="empty"><b>No tasks yet</b>Load the standard checklist for this phase, then edit, add or skip tasks to fit the project.</div>`}`;
+}
+async function loadTemplate(ph){
+  const rows=S.regs.tasks.filter(t=>t.phase===ph);const now=Date.now();let n=0;
+  for(const [i,t] of TEMPLATES[ph].entries()){if(rows.some(r=>r.title===t))continue;
+    await write({op:'set',path:`audits/${S.auditId}/tasks/tsk-${ph}-${now.toString(36)}-${i}`,data:{title:t,phase:ph,status:'To do',order:i,createdAt:now,updatedAt:now,by:S.uid||null}});n++}
+  toast(`${n} task${n===1?'':'s'} added.`);
+}
+async function tickTask(id){
+  const r=S.regs.tasks.find(x=>x.id===id);if(!r||readOnly())return;const st=r.status==='Done'?'To do':'Done';
+  r.status=st;render();
+  await write({op:'merge',path:`audits/${S.auditId}/tasks/${id}`,data:{status:st,updatedAt:Date.now(),editedBy:S.uid||null}});
+}
+
+/* ---------- analysis ---------- */
+function limitsOf(){return (S.audit&&S.audit.limits)||{}}
+function resultRows(point){return S.regs.results.filter(r=>{const sm=sampleByCode(r.sample);return sm&&sm.point===point})}
+function stats(vals){const v=vals.filter(x=>x!==null);if(!v.length)return null;return {n:v.length,avg:v.reduce((a,b)=>a+b,0)/v.length,max:Math.max(...v),min:Math.min(...v)}}
+function fmtN(x){if(x===null||x===undefined||!isFinite(x))return '–';const a=Math.abs(x);return a>=100?Math.round(x).toLocaleString('en-GB'):a>=10?x.toFixed(1):x.toFixed(2)}
+function analysisRows(){
+  const L=limitsOf();const inl=resultRows('WWTP inlet'),out=resultRows('Final outlet');
+  return PARAMS.map(pr=>{
+    const si=stats(inl.map(r=>num(r['r_'+pr.id]))),so=stats(out.map(r=>num(r['r_'+pr.id])));
+    const lim=L[pr.id]||{};const mx=num(lim.max),mn=num(lim.min);
+    let status='',over=0;
+    if(so&&(mx!==null||mn!==null)){out.forEach(r=>{const v=num(r['r_'+pr.id]);if(v===null)return;if((mx!==null&&v>mx)||(mn!==null&&v<mn))over++});status=over?'Exceeds':'Complies'}
+    const rem=si&&so&&si.avg>0&&pr.id!=='ph'&&pr.id!=='temp'?(1-so.avg/si.avg)*100:null;
+    return {pr,si,so,mx,mn,over,status,rem};
+  }).filter(r=>r.si||r.so||r.mx!==null||r.mn!==null);
+}
+function viewAnalysis(){
+  const L=limitsOf();const ro=readOnly();const rows=analysisRows();
+  const fl=pt=>stats(S.regs.flows.filter(f=>f.point===pt).map(f=>num(f.flow)));
+  const fin=fl('WWTP inlet')||fl('Final outlet');const df=num(ans('wwtp','design_flow')),dcod=num(ans('wwtp','design_cod'));
+  const codIn=stats(resultRows('WWTP inlet').map(r=>num(r.r_cod)));const load=fin&&codIn?fin.avg*codIn.avg/1000:null;
+  return `<div class="sechead"><div><h2>Audit analysis</h2><p class="intro" style="margin:4px 0 0">Calculated from the lab results, sample points and flow log. Inlet means samples at “WWTP inlet”; outlet means “Final outlet”.</p></div></div>
+  <div class="stats" style="margin-bottom:16px">
+   <div class="stat"><b>${fin?fmtN(fin.avg):'–'}</b><span>Average flow, m³/day${fin?` (${fin.n} day${fin.n>1?'s':''})`:''}</span></div>
+   <div class="stat"><b>${fin&&df?Math.round(fin.avg/df*100)+'%':'–'}</b><span>Of design flow${df?` (${fmtN(df)} m³/day)`:' (enter design flow in the questionnaire)'}</span></div>
+   <div class="stat"><b>${load!==null?fmtN(load):'–'}</b><span>COD load at inlet, kg/day</span></div>
+   <div class="stat"><b>${load!==null&&dcod?Math.round(load/dcod*100)+'%':'–'}</b><span>Of design COD load</span></div>
+   <div class="stat"><b>${rows.filter(r=>r.status==='Exceeds').length}</b><span>Parameters exceeding limits</span></div>
+  </div>
+  <section class="card" style="margin-bottom:16px"><div class="cardtitle">Results against limits</div>
+   ${rows.length?`<div class="tablewrap" style="border:0"><table class="tbl"><thead><tr><th>Parameter</th><th>Unit</th><th>Inlet avg</th><th>Outlet avg</th><th>Outlet max</th><th>Limit</th><th>Removal</th><th>Status</th></tr></thead><tbody>${rows.map(r=>`<tr><td><b>${esc(r.pr.label)}</b></td><td class="muted">${esc(r.pr.unit)}</td><td class="mono">${r.si?fmtN(r.si.avg)+` <span class="muted">(${r.si.n})</span>`:'–'}</td><td class="mono">${r.so?fmtN(r.so.avg)+` <span class="muted">(${r.so.n})</span>`:'–'}</td><td class="mono">${r.so?fmtN(r.so.max):'–'}</td><td class="mono">${limText(r)}</td><td class="mono">${r.rem!==null?Math.round(r.rem)+'%':'–'}</td><td>${r.status==='Exceeds'?`<span class="pill bad">Exceeds (${r.over}/${r.so.n})</span>`:r.status==='Complies'?'<span class="pill good">Complies</span>':'<span class="muted">No limit</span>'}</td></tr>`).join('')}</tbody></table></div>`
+   :`<p class="muted" style="margin:0">Results appear here once lab results are entered for samples taken at the WWTP inlet and final outlet.</p>`}
+  </section>
+  <section class="card"><div class="cardtitle">Discharge limits</div>
+   <p class="muted" style="margin:0 0 10px">Enter the limits from the client’s EPA permit (or the standard that applies). Final-outlet results are checked against them, and exceedances appear in the findings.</p>
+   <div class="tablewrap" style="border:0"><table class="tbl limits" style="min-width:480px"><thead><tr><th>Parameter</th><th>Unit</th><th>Minimum</th><th>Maximum</th></tr></thead><tbody>${PARAMS.map(pr=>{const l=L[pr.id]||{};return `<tr><td>${esc(pr.label)}</td><td class="muted">${esc(pr.unit)}</td><td>${pr.id==='ph'?`<input class="inp" inputmode="decimal" data-limit="${pr.id}" data-lk="min" value="${esc(l.min??'')}" ${ro?'disabled':''} aria-label="${esc(pr.label)} minimum">`:''}</td><td><input class="inp" inputmode="decimal" data-limit="${pr.id}" data-lk="max" value="${esc(l.max??'')}" ${ro?'disabled':''} aria-label="${esc(pr.label)} maximum"></td></tr>`}).join('')}</tbody></table></div>
+  </section>`;
+}
+function saveLimit(pid,key,val){
+  if(readOnly()||!S.audit)return;const v=val.trim();
+  S.audit.limits={...(S.audit.limits||{}),[pid]:{...((S.audit.limits||{})[pid]||{}),[key]:v}};
+  write({op:'merge',path:'audits/'+S.auditId,data:{limits:{[pid]:{[key]:v}}}});
+}
+function limText(r){return r.mn!==null&&r.mx!==null?fmtN(r.mn)+'–'+fmtN(r.mx):r.mx!==null?'≤ '+fmtN(r.mx):r.mn!==null?'≥ '+fmtN(r.mn):'–'}
+function measured(){const fl=pt=>stats(S.regs.flows.filter(f=>f.point===pt).map(f=>num(f.flow)));const fin=fl('WWTP inlet')||fl('Final outlet');const codIn=stats(resultRows('WWTP inlet').map(r=>num(r.r_cod)));return {fin,load:fin&&codIn?fin.avg*codIn.avg/1000:null}}
+function costAmount(r){const q=num(r.qty),rt=num(r.rate);return q!==null&&rt!==null?q*rt:null}
+function costTotals(){
+  const by={};let all=0;S.regs.costing.forEach(r=>{const a=costAmount(r);if(a===null)return;const k=r.phase||'Unassigned';by[k]=(by[k]||0)+a;all+=a});
+  const money=x=>'GHS '+Math.round(x).toLocaleString('en-GB');
+  return `<div class="stats" style="margin-bottom:16px">${Object.entries(by).map(([k,v])=>`<div class="stat"><b>${money(v)}</b><span>${esc(k)}</span></div>`).join('')}<div class="stat"><b>${money(all)}</b><span>Total, all phases</span></div></div>`;
 }
 
 /* ---------- questionnaire ---------- */
@@ -732,7 +923,8 @@ function qInput(q,val,ctx){
     const unit=q.unitField?`<select class="unit" data-q="${q.unitField}" aria-label="Unit" ${dis}>${q.units.map(u=>`<option ${ctx==='r'&&S.sheet&&S.sheet.data[q.unitField]===u?'selected':''}>${esc(u)}</option>`).join('')}</select>`:(q.unit?`<span class="unit">${esc(q.unit)}</span>`:'');
     return `<div class="numwrap"><input class="inp" id="${id}" type="text" inputmode="decimal" data-q="${q.id}" value="${esc(val??'')}" placeholder="${esc(q.ph||'')}" ${dis} style="${unit?'':'border-radius:8px'}">${unit}</div>`;
   }
-  if(q.type==='select')return `<select class="inp" id="${id}" data-q="${q.id}" ${dis}><option value="">Select…</option>${q.options.map(o=>`<option ${val===o?'selected':''}>${esc(o)}</option>`).join('')}</select>`;
+  if(q.type==='hidden')return '';
+  if(q.type==='select')return `<select class="inp" id="${id}" data-q="${q.id}" ${dis}><option value="">Select…</option>${(typeof q.options==='function'?q.options():q.options).map(o=>`<option ${val===o?'selected':''}>${esc(o)}</option>`).join('')}</select>`;
   if(q.type==='chips'||q.type==='rating'){
     const opts=q.type==='rating'?['1','2','3','4','5']:q.options;
     return `<div class="chips ${q.type==='rating'?'rating':''}" id="${id}" data-q="${q.id}" data-kind="single" role="group">${opts.map(o=>`<button type="button" data-v="${esc(o)}" aria-pressed="${String(val)===o}" ${dis}>${esc(o)}</button>`).join('')}</div>`;
@@ -799,6 +991,17 @@ function summary(k,r){
   if(k==='samples'){t=r.code||'Code pending';m=[esc(r.point||''),esc(r.point_detail||''),esc(r.stype||''),esc([r.collected_date,r.time].filter(Boolean).join(' '))].filter(Boolean).join(' · ');
     const st=r.status||'Planned';pills.push(`<span class="pill ${{Planned:'',Collected:'info','Sent to lab':'warn','Results received':'good'}[st]}">${esc(st)}</span>`);
     if((r.params||[]).length)pills.push(`<span class="pill">${esc(r.params.join(', '))}</span>`)}
+  if(k==='costing'){t=r.item||'Cost line';m=[esc(r.phase||''),esc(r.category||'')].filter(Boolean).join(' · ');
+    if(num(r.qty)!==null)pills.push(`<span class="pill mono">${esc(r.qty)} ${esc(r.unit||'')}${num(r.rate)!==null?' × GHS '+esc(r.rate):''}</span>`);
+    const a=costAmount(r);if(a!==null)pills.push(`<span class="pill info mono">GHS ${Math.round(a).toLocaleString('en-GB')}</span>`)}
+  if(k==='results'){const sm=sampleByCode(r.sample);t=r.sample||'No sample code';m=[esc(sm?sm.point:''),esc(r.lab||''),esc(r.received?fmtDate(r.received):'')].filter(Boolean).join(' · ');
+    const L=limitsOf();const isOut=sm&&sm.point==='Final outlet';
+    PARAMS.forEach(pr=>{const v=num(r['r_'+pr.id]);if(v===null)return;const l=L[pr.id]||{};const bad=isOut&&((num(l.max)!==null&&v>num(l.max))||(num(l.min)!==null&&v<num(l.min)));pills.push(`<span class="pill mono ${bad?'bad':''}">${esc(pr.label)} ${esc(r['r_'+pr.id])}</span>`)})}
+  if(k==='flows'){t=num(r.flow)!==null?`${fmtN(num(r.flow))} m³/day`:'Flow reading';m=[esc(r.date?fmtDate(r.date):''),esc(r.point||''),esc(r.method||'')].filter(Boolean).join(' · ')}
+  if(k==='options'){t=r.title||'Option';m=[esc(r.category||''),esc((r.params||[]).join(', '))].filter(Boolean).join(' · ');
+    if(r.priority)pills.push(`<span class="pill ${{High:'bad',Medium:'warn',Low:''}[r.priority]}">${esc(r.priority)} priority</span>`);
+    if(r.status)pills.push(`<span class="pill ${{Agreed:'info',Implemented:'good',Rejected:''}[r.status]||''}">${esc(r.status)}</span>`);
+    if(num(r.capex)!==null)pills.push(`<span class="pill mono">GHS ${Math.round(num(r.capex)).toLocaleString('en-GB')}</span>`)}
   if(k==='observations'){t=r.title||'Observation';m=esc(r.area||'');if(r.severity)pills.push(`<span class="pill ${{Info:'info',Concern:'warn',Critical:'bad'}[r.severity]}">${esc(r.severity)}</span>`)}
   const ph=(r.photos||[]).slice(0,4).map(id=>`<img data-photo="${esc(id)}" alt="">`).join('');
   return `<span class="t ${k==='samples'&&r.code?'code':''}">${esc(t)}</span>${m?`<span class="m">${m}</span>`:''}${pills.length?`<span class="p">${pills.join('')}</span>`:''}${ph?`<span class="thumbs">${ph}</span>`:''}<span class="m">${r.by||r.updatedAt?`Recorded ${r.updatedAt?when(r.updatedAt):''}${r.by?' by '+esc(who(r.by)):''}`:''}</span>`;
@@ -817,7 +1020,7 @@ function viewRegister(k){
   const loaded=S.regsLoaded[k];
   return `<div class="sechead"><div><h2>${R.label}</h2><p class="intro" style="margin:4px 0 0">${esc(R.intro)}</p></div>
    <button class="btn primary" type="button" data-act="add" ${readOnly()?'disabled':''}>Add ${R.one}</button></div>
-   ${k==='samples'?samplesTools():''}
+   ${k==='samples'?samplesTools():''}${k==='costing'?costTotals():''}
    ${S.regs[k].length?`<div class="toolbar"><input class="inp" type="search" id="flt-q" placeholder="Search ${R.label.toLowerCase()}" value="${esc(f.q)}" aria-label="Search">
    ${areaField?`<select class="inp" id="flt-a" aria-label="Filter by ${esc(areaField.label)}"><option value="">All ${esc(areaField.label.toLowerCase())}s</option>${[...new Set(S.regs[k].map(r=>r[areaField.id]).filter(Boolean))].sort().map(o=>`<option ${f.a===o?'selected':''}>${esc(o)}</option>`).join('')}</select>`:''}</div>`:''}
    ${rows.length?`<div class="list">${rows.map(r=>`<button class="item" type="button" data-edit="${esc(r.id)}">${summary(k,r)}</button>`).join('')}</div>`
@@ -825,16 +1028,17 @@ function viewRegister(k){
 }
 
 /* ---------- editor sheet ---------- */
-function openSheet(k,id){
+function openSheet(k,id,preset){
   const rec=id?S.regs[k].find(r=>r.id===id):null;
   const data=rec?JSON.parse(JSON.stringify(rec)):{};delete data.id;
   REGS[k].fields.forEach(fd=>{if(fd.unitField&&!data[fd.unitField])data[fd.unitField]=fd.units[0]});
+  if(!id&&preset)Object.assign(data,preset);
   S.sheet={k,id:id||null,data,dirty:false,confirm:false};renderSheet();
 }
 function renderSheet(){
   const sh=S.sheet;const root=$('#sheetRoot');if(!sh){root.innerHTML='';document.body.style.overflow='';return}
   const R=REGS[sh.k];const ro=readOnly();
-  const fields=R.fields.map(q=>`<div class="f"><label class="ql" for="r-${q.id}">${esc(q.label)}</label>${q.hint?`<span class="hint">${esc(q.hint)}</span>`:''}${qInput(q,sh.data[q.id],'r')}</div>`).join('');
+  const fields=R.fields.filter(q=>q.type!=='hidden'&&(!q.showIf||q.showIf(sh.data))).map(q=>`<div class="f"><label class="ql" for="r-${q.id}">${esc(q.label)}</label>${q.hint?`<span class="hint">${esc(q.hint)}</span>`:''}${qInput(q,sh.data[q.id],'r')}</div>`).join('');
   root.innerHTML=`<div class="scrim" data-act="scrim"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
    <header class="gut"><h3 id="sheetTitle">${sh.id?'Edit':'New'} ${R.one}</h3><button class="btn ghost" type="button" data-act="close">Close</button></header>
    <div class="body gut" id="sheetBody">${fields}</div>
@@ -932,7 +1136,10 @@ document.addEventListener('click',async e=>{
   const t=e.target;
   const sec=t.closest('[data-sec]');if(sec){S.section=sec.dataset.sec;if(S.view!=='questions'){go('questions',{section:sec.dataset.sec})}else{render();window.scrollTo({top:0})}return}
   const vg=t.closest('[data-view-go]');if(vg){go(vg.dataset.viewGo);return}
-  const ed=t.closest('[data-edit]');if(ed){openSheet(S.view,ed.dataset.edit);return}
+  const tk=t.closest('[data-tick]');if(tk){tickTask(tk.dataset.tick);return}
+  const pg=t.closest('[data-phase-go]');if(pg){const P=phaseOf(pg.dataset.phaseGo);S.phase=P.id;go(P.views[0][0]);return}
+  const sp=t.closest('[data-set-phase]');if(sp){saveAudit('phase',sp.dataset.setPhase);render();return}
+  const ed=t.closest('[data-edit]');if(ed){openSheet(ed.dataset.k||S.view,ed.dataset.edit);return}
   const rm=t.closest('[data-rmphoto]');if(rm&&S.sheet){const f=rm.dataset.field;S.sheet.data[f]=(S.sheet.data[f]||[]).filter(x=>x!==rm.dataset.rmphoto);S.sheet.dirty=true;renderSheetPhotos();return}
   const chip=t.closest('.chips button');
   if(chip&&!chip.disabled){
@@ -951,7 +1158,9 @@ document.addEventListener('click',async e=>{
   if(a==='pick'){selectAudit(act.dataset.id);go('overview')}
   if(a==='back-sections'){S.section=null;render();window.scrollTo({top:0})}
   if(a==='to-overview'){S.section=null;go('overview')}
-  if(a==='add')openSheet(S.view,null);
+  if(a==='add')openSheet(S.view,null,S.view==='costing'?{phase:S.phase==='remediation'?'Remediation and retrofit':S.phase==='monitoring'?'Monitoring and aftercare':'Full audit'}:null);
+  if(a==='add-task')openSheet('tasks',null,{phase:S.phase,status:'To do',order:999});
+  if(a==='load-template')loadTemplate(S.phase);
   if(a==='close'||a==='scrim'){S.sheet=null;renderSheet()}
   if(a==='save')saveSheet();
   if(a==='del'){collectSheet();S.sheet.confirm=true;renderSheet()}
@@ -975,6 +1184,8 @@ document.addEventListener('change',e=>{
   if(['plan-n','lab-which','lab-start'].includes(t.id)){S.plan[t.id]=t.value;return}
   if(S.sheet&&S.sheet.k==='samples'&&!S.sheet.id&&['point','collected_date'].includes(t.dataset.q)){collectSheet();S.sheet.data.code=nextCode(S.sheet.data.point,S.sheet.data.collected_date);const cv=$('#codeVal');if(cv)cv.textContent=S.sheet.data.code}
   if(t.dataset.audit){saveAudit(t.dataset.audit,t.value);return}
+  if(t.dataset.limit){saveLimit(t.dataset.limit,t.dataset.lk,t.value);return}
+  if(S.sheet&&t.closest('#sheetBody')&&t.dataset.q){const fd=REGS[S.sheet.k].fields.find(x=>x.id===t.dataset.q);if(fd&&fd.rerender){collectSheet();renderSheet();return}}
   if(t.dataset.q&&!t.closest('#sheetBody')&&t.closest('#qs')){clearTimeout(S.timers['q:'+t.dataset.q]);delete S.timers['q:'+t.dataset.q];commitInput(t)}
   if(t.closest('#sheetBody'))S.sheet&&(S.sheet.dirty=true);
 });
@@ -1014,8 +1225,8 @@ function exportCSV(k='equipment'){
 }
 function regRows(k){
   const f=REGS[k].fields.filter(x=>x.type!=='photos');
-  const cols=[...f.flatMap(x=>x.unitField?[x,{id:x.unitField,label:x.label+' unit'}]:[x]),...(k==='equipment'?[{id:'_age',label:'Age (years)',type:'number'}]:[]),{id:'_photos',label:'Photos',type:'number'},{id:'_by',label:'Recorded by'},{id:'_at',label:'Last updated'},{id:'_id',label:'Record ID'}];
-  const val=(r,c)=>{let v=c.id==='_age'?(num(r.year)?YEAR-num(r.year):''):c.id==='_photos'?(r.photos||[]).length:c.id==='_id'?r.id:c.id==='_by'?(S.names[r.by]||''):c.id==='_at'?(r.updatedAt?new Date(r.updatedAt).toISOString().slice(0,16).replace('T',' '):''):r[c.id];
+  const cols=[...f.flatMap(x=>x.unitField?[x,{id:x.unitField,label:x.label+' unit'}]:[x]),...(k==='equipment'?[{id:'_age',label:'Age (years)',type:'number'}]:[]),...(k==='costing'?[{id:'_amount',label:'Amount (GHS)',type:'number'}]:[]),{id:'_photos',label:'Photos',type:'number'},{id:'_by',label:'Recorded by'},{id:'_at',label:'Last updated'},{id:'_id',label:'Record ID'}];
+  const val=(r,c)=>{let v=c.id==='_amount'?costAmount(r):(k==='tasks'&&c.id==='phase')?((phaseOf(r.phase)||{}).label||r.phase):c.id==='_age'?(num(r.year)?YEAR-num(r.year):''):c.id==='_photos'?(r.photos||[]).length:c.id==='_id'?r.id:c.id==='_by'?(S.names[r.by]||''):c.id==='_at'?(r.updatedAt?new Date(r.updatedAt).toISOString().slice(0,16).replace('T',' '):''):r[c.id];
     if(Array.isArray(v))v=v.join('; ');if(c.type==='number'&&num(v)!==null)return num(v);return v??''};
   return {headers:['Client','Site','Visit date',...cols.map(c=>c.label)],rows:S.regs[k].map(r=>[...auditCols(),...cols.map(c=>val(r,c))])};
 }
@@ -1035,9 +1246,11 @@ async function exportXLSX(mode){
   add('Summary','Summary',['Client','Site','Visit date','Industry','Cleanearth team','Status','Questions answered','Questions total','Equipment items','Chemicals','Product lines','Field readings','Samples','Observations','Critical findings','Concerns','Exported at','Audit ID'],
     [[a.client||'',a.site||'',a.visitDate||'',a.sector||'',a.team||'',a.status||'',tot.n,tot.t,S.regs.equipment.length,S.regs.chemicals.length,S.regs.products.length,S.regs.measurements.length,S.regs.samples.length,S.regs.observations.length,F.filter(f=>f[0]==='bad').length,F.filter(f=>f[0]!=='bad').length,new Date().toISOString().slice(0,16).replace('T',' '),S.auditId]]);
   add('Findings','Findings',['Client','Site','Visit date','Severity','Finding'],F.map(([sv,t])=>[...auditCols(),sv==='bad'?'Critical':'Concern',t]));
+  add('Analysis','Analysis',['Client','Site','Visit date','Parameter','Unit','Inlet average','Inlet samples','Outlet average','Outlet maximum','Outlet samples','Limit minimum','Limit maximum','Removal %','Status','Samples exceeding'],
+    analysisRows().map(r=>[...auditCols(),r.pr.label,r.pr.unit,r.si?+r.si.avg.toFixed(3):'',r.si?r.si.n:'',r.so?+r.so.avg.toFixed(3):'',r.so?r.so.max:'',r.so?r.so.n:'',r.mn??'',r.mx??'',r.rem!==null?Math.round(r.rem):'',r.status||'No limit',r.over||0]));
   const qrows=[];SECTIONS.forEach(s=>s.qs.forEach(q=>{let v=ans(s.id,q.id);if(Array.isArray(v))v=v.join('; ');if(q.type==='number'&&num(v)!==null)v=num(v);qrows.push([...auditCols(),s.title,s.id+'.'+q.id,q.label,q.unit||'',v??''])}));
   add('Questionnaire','Questionnaire',['Client','Site','Visit date','Section','Question ID','Question','Unit','Answer'],qrows);
-  const names={equipment:['Equipment','Equipment'],chemicals:['Chemicals','Chemicals'],products:['Product lines','ProductLines'],measurements:['Field readings','FieldReadings'],samples:['Samples','Samples'],observations:['Observations','Observations']};
+  const names={tasks:['Checklist','Checklist'],costing:['Costing','Costing'],results:['Lab results','LabResults'],flows:['Flow log','FlowLog'],options:['Options','Options'],equipment:['Equipment','Equipment'],chemicals:['Chemicals','Chemicals'],products:['Product lines','ProductLines'],measurements:['Field readings','FieldReadings'],samples:['Samples','Samples'],observations:['Observations','Observations']};
   REG_KEYS.forEach(k=>{const {headers,rows}=regRows(k);const [sh,tb]=names[k]||[REGS[k].label,k];add(sh,tb,headers,rows)});
   const buf=await wb.xlsx.writeBuffer();
   const d=(a.visitDate||new Date().toISOString().slice(0,10));

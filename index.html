@@ -807,6 +807,8 @@ const TASKSPEC={
    {id:'date',label:'Date',type:'date',req:true},{id:'scope',label:'Scope and findings',type:'textarea',req:true}]}]
 };
 const TEMPLATES=Object.fromEntries(Object.entries(TASKSPEC).map(([k,v])=>[k,v.map(t=>t.title)]));
+const LEGACY_TITLES={"pre": [], "proposal": ["Define audit scope and sampling points", "Agree monitoring duration (normally 5–7 days, including CIP and a weekend)", "Set the parameter list for each sampling point", "Get a quotation from an accredited laboratory", "Confirm flow metering (existing meters or hired meters)", "Estimate staff days, transport and equipment hire", "Complete the costing table", "Internal review of scope and price", "Client approval or purchase order received", "Contract signed; site access, PPE and induction confirmed"], "audit": ["Mobilise: induction, permits, equipment calibrated", "Plan samples and generate sample codes", "Run the composite sampling campaign at every stage", "Take grab samples (pH, temperature, FOG, microbiology)", "Process tests: SV30/SVI, microscopy, DAF performance", "Chain of custody completed and samples delivered to the lab", "Draft the audit report and review internally", "Present findings to the client"], "remediation": ["Estimate capital and running cost for each option", "Operator training and updated SOPs", "Handover documents (drawings, O&M manual, warranties)"], "monitoring": ["Agree the monitoring schedule and parameters", "Monthly compliance sampling", "Review results against limits each month", "Quarterly review meeting with the client"]};
+function isLegacy(t){return !t.key&&!specFor(t)&&(LEGACY_TITLES[t.phase]||[]).includes(t.title)}
 function specFor(t){const L=TASKSPEC[t.phase]||[];return L.find(x=>x.key&&x.key===t.key)||L.find(x=>x.title===t.title)||null}
 function answeredQ(q,v){return Array.isArray(v)?v.length>0:has(v)}
 function reqProgress(t){const sp=specFor(t);const rq=sp?sp.qs.filter(q=>q.req):[];const a=t.answers||{};return {n:rq.filter(q=>answeredQ(q,a[q.id])).length,t:rq.length}}
@@ -1118,9 +1120,10 @@ function phaseTracker(){
 /* ---------- checklist & task pages ---------- */
 function viewTasks(ph){
   const P=phaseOf(ph);const rows=S.regs.tasks.filter(t=>t.phase===ph).sort((a,b)=>(a.order??999)-(b.order??999)||(a.createdAt||0)-(b.createdAt||0));
-  const pr=phaseProgress(ph);const ro=readOnly();const missing=TEMPLATES[ph].filter(t=>!rows.some(r=>r.title===t)).length;
+  const pr=phaseProgress(ph);const ro=readOnly();const missing=TASKSPEC[ph].filter(t=>!rows.some(r=>r.title===t.title||(t.key&&r.key===t.key))).length;
   return `<div class="sechead"><div><h2>${esc(P.label)} checklist</h2><p class="intro" style="margin:4px 0 0">${esc(P.intro)} Open a task to answer what is needed to call it done.</p></div>
    <div class="row">${missing&&!ro?`<button class="btn" type="button" data-act="load-template">${rows.length?`Add ${missing} standard task${missing>1?'s':''}`:'Load standard checklist'}</button>`:''}<button class="btn primary" type="button" data-act="add-task" ${ro?'disabled':''}>Add task</button></div></div>
+   ${rows.some(isLegacy)&&!ro?`<div class="banner" style="display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap"><span>${rows.filter(isLegacy).length} task${rows.filter(isLegacy).length>1?'s were':' was'} loaded in an earlier version and ${rows.filter(isLegacy).length>1?'have':'has'} no questions.</span><button class="btn primary" type="button" data-act="upgrade-tasks">Replace with the detailed checklist</button></div>`:''}
    ${ph==='proposal'?proposalBar():''}
    ${pr.t?`<div class="card" style="margin-bottom:12px;padding:12px 16px"><div class="row" style="justify-content:space-between"><b>${pr.n} of ${pr.t} done</b><span class="frac">${Math.round(pr.n/pr.t*100)}%</span></div><div class="meter" style="margin-top:8px"><i class="${pr.n===pr.t?'full':''}" style="width:${pr.n/pr.t*100}%"></i></div></div>`:''}
    ${rows.length?`<ul class="tasks">${rows.map(r=>{const st=r.status||'To do';const rp=reqProgress(r);const overdue=r.due&&st!=='Done'&&st!=='Not needed'&&r.due<new Date().toISOString().slice(0,10);
@@ -1134,6 +1137,11 @@ function proposalBar(){
   return `<div class="card" style="margin-bottom:12px"><div class="row" style="justify-content:space-between;align-items:flex-start"><div><div class="cardtitle" style="margin-bottom:6px">Proposal</div>
    <div class="row" style="gap:20px"><span><b class="mono">${money(a||0)}</b> <span class="muted">audit price</span></span><span><b class="mono">${p.hi?`${money(p.lo)} – ${money(p.hi)}`:'–'}</b> <span class="muted">whole programme</span></span></div></div>
    <div class="row"><button class="btn" type="button" data-view-go="costing">Costing</button>${S.downloads?'<button class="btn primary" type="button" data-act="gen-proposal">Generate proposal (.docx)</button>':''}</div></div></div>`;
+}
+async function upgradeTasks(ph){
+  if(readOnly())return;const old=S.regs.tasks.filter(t=>t.phase===ph&&isLegacy(t));
+  for(const t of old)await write({op:'delete',path:`audits/${S.auditId}/tasks/${t.id}`});
+  S.regs.tasks=S.regs.tasks.filter(t=>!old.includes(t));await loadTemplate(ph);
 }
 async function loadTemplate(ph){
   const rows=S.regs.tasks.filter(t=>t.phase===ph);const now=Date.now();let n=0;
@@ -1562,6 +1570,7 @@ document.addEventListener('click',async e=>{
   if(a==='add')openSheet(S.view,null,S.view==='costing'?{phase:S.phase==='remediation'?'Remediation and retrofit':S.phase==='monitoring'?'Monitoring and aftercare':'Full audit'}:null);
   if(a==='add-task')openSheet('tasks',null,{phase:S.phase,status:'To do',order:999});
   if(a==='load-template')loadTemplate(S.phase);
+  if(a==='upgrade-tasks')upgradeTasks(S.phase);
   if(a==='build-costs')buildCosts();
   if(a==='gen-proposal')genProposal();
   if(a==='task-done'){const t=curTask();const rp=t&&reqProgress(t);if(rp&&rp.n<rp.t){toast('Answer the required questions first.');return}setTaskStatus('Done')}

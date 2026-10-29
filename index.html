@@ -208,6 +208,8 @@ textarea.inp{min-height:80px;resize:vertical}
 #tqs .q:first-of-type{border-top:0}
 .tcalc .computed{margin-top:0}
 .chev{color:var(--muted);font-size:20px;padding:0 2px}
+.dangerzone{border-color:var(--bad-soft)}
+.dangerzone .cardtitle{color:var(--bad)}
 .confirm{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:14px}
 
 /* audits list */
@@ -892,6 +894,7 @@ async function boot(){
   S.db.collection('audits').onSnapshot(snap=>{
     S.audits=snap.docs.map(d=>({id:d.id,...d.data()}));S.auditsLoaded=true;
     if(!S.auditId||!S.audits.find(a=>a.id===S.auditId)){
+      if(S.noAutoPick){S.auditId=null;S.audit=null;render();return}
       const saved=ls.get('ce-audit',null);
       const pick=S.audits.find(a=>a.id===saved)||S.audits.slice().sort((a,b)=>(b.visitDate||'').localeCompare(a.visitDate||''))[0];
       if(pick)selectAudit(pick.id);else render();
@@ -1105,6 +1108,11 @@ function viewOverview(){
     <section class="card"><div class="cardtitle">Project details</div>
      ${vf('client','Client')}${vf('site','Site')}${vf('sector','Industry / sector','text','e.g. Dairy, brewery, textiles')}${vf('code','Client code for sample codes','text','e.g. DFM (defaults to the client’s initials)')}${vf('visitDate','Pre-audit visit date','date')}${vf('team','Cleanearth team','text','Names and roles')}${vf('status','Status','text','Planned, In progress, Complete')}${vf('purpose','Purpose of visit','textarea')}
     </section>
+    ${ro?'':`<section class="card dangerzone"><div class="cardtitle">Delete project</div>
+     ${S.confirmDel?`<p style="margin:0 0 10px">This permanently deletes <b>${esc(a.client||'this project')}</b>: every answer, register, checklist, lab result and photo. Nobody can undo it. Download the workbook first if you want a copy.</p>
+      <div class="f" style="border:0;padding-top:0"><label class="ql" for="delConfirm">Type DELETE to confirm</label><input class="inp" id="delConfirm" autocomplete="off"></div>
+      <div class="row"><button class="btn danger" type="button" data-act="del-project-yes" id="delBtn" disabled>Delete project</button><button class="btn" type="button" data-act="del-project-no">Cancel</button></div>`
+     :`<p class="muted" style="margin:0 0 10px">Remove this project and all its data, for example a test project or one created by mistake.</p><button class="btn danger" type="button" data-act="del-project-ask">Delete this project…</button>`}</section>`}
    </div>
   </div>`;
 }
@@ -1122,7 +1130,8 @@ function viewTasks(ph){
   const P=phaseOf(ph);const rows=S.regs.tasks.filter(t=>t.phase===ph).sort((a,b)=>(a.order??999)-(b.order??999)||(a.createdAt||0)-(b.createdAt||0));
   const pr=phaseProgress(ph);const ro=readOnly();const missing=TASKSPEC[ph].filter(t=>!rows.some(r=>r.title===t.title||(t.key&&r.key===t.key))).length;
   return `<div class="sechead"><div><h2>${esc(P.label)} checklist</h2><p class="intro" style="margin:4px 0 0">${esc(P.intro)} Open a task to answer what is needed to call it done.</p></div>
-   <div class="row">${missing&&!ro?`<button class="btn" type="button" data-act="load-template">${rows.length?`Add ${missing} standard task${missing>1?'s':''}`:'Load standard checklist'}</button>`:''}<button class="btn primary" type="button" data-act="add-task" ${ro?'disabled':''}>Add task</button></div></div>
+   <div class="row">${missing&&!ro?`<button class="btn" type="button" data-act="load-template" ${S.loadingTpl?'disabled':''}>${S.loadingTpl?'Adding tasks…':rows.length?`Add ${missing} standard task${missing>1?'s':''}`:'Load standard checklist'}</button>`:''}<button class="btn primary" type="button" data-act="add-task" ${ro?'disabled':''}>Add task</button>
+   ${rows.length&&!ro?(S.confirmClear===ph?`<span class="confirm">Remove all ${rows.length} tasks and their answers? <button class="btn danger" type="button" data-act="clear-yes">Remove</button><button class="btn" type="button" data-act="clear-no">Keep</button></span>`:`<button class="btn ghost" type="button" data-act="clear-ask">Clear checklist</button>`):''}</div></div>
    ${rows.some(isLegacy)&&!ro?`<div class="banner" style="display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap"><span>${rows.filter(isLegacy).length} task${rows.filter(isLegacy).length>1?'s were':' was'} loaded in an earlier version and ${rows.filter(isLegacy).length>1?'have':'has'} no questions.</span><button class="btn primary" type="button" data-act="upgrade-tasks">Replace with the detailed checklist</button></div>`:''}
    ${ph==='proposal'?proposalBar():''}
    ${pr.t?`<div class="card" style="margin-bottom:12px;padding:12px 16px"><div class="row" style="justify-content:space-between"><b>${pr.n} of ${pr.t} done</b><span class="frac">${Math.round(pr.n/pr.t*100)}%</span></div><div class="meter" style="margin-top:8px"><i class="${pr.n===pr.t?'full':''}" style="width:${pr.n/pr.t*100}%"></i></div></div>`:''}
@@ -1144,10 +1153,23 @@ async function upgradeTasks(ph){
   S.regs.tasks=S.regs.tasks.filter(t=>!old.includes(t));await loadTemplate(ph);
 }
 async function loadTemplate(ph){
-  const rows=S.regs.tasks.filter(t=>t.phase===ph);const now=Date.now();let n=0;
-  for(const [i,t] of TASKSPEC[ph].entries()){if(rows.some(r=>r.title===t.title||(t.key&&r.key===t.key)))continue;
-    await write({op:'set',path:`audits/${S.auditId}/tasks/tsk-${ph}-${t.key||i}-${now.toString(36)}`,data:{title:t.title,key:t.key||null,phase:ph,status:'To do',order:i,answers:{},createdAt:now,updatedAt:now,by:S.uid||null}});n++}
-  toast(`${n} task${n===1?'':'s'} added.`);
+  if(readOnly()||S.loadingTpl)return;
+  const rows=S.regs.tasks.filter(t=>t.phase===ph);const now=Date.now();
+  const items=TASKSPEC[ph].map((t,i)=>({t,i})).filter(({t})=>!rows.some(r=>r.title===t.title||(t.key&&r.key===t.key)))
+    .map(({t,i})=>({path:`audits/${S.auditId}/tasks/tsk-${ph}-${t.key||i}-${now.toString(36)}`,data:{title:t.title,key:t.key||null,phase:ph,status:'To do',order:i,answers:{},createdAt:now,updatedAt:now,by:S.uid||null}}));
+  if(!items.length){toast('The standard checklist is already loaded.');return}
+  S.loadingTpl=true;render();
+  try{
+    if(S.db.setMany){await S.db.setMany(items)}
+    else{for(const it of items){const ok=await write({op:'set',path:it.path,data:it.data});if(!ok)throw new Error('Could not save a task.')}}
+    toast(`${items.length} task${items.length===1?'':'s'} added.`);
+  }catch(e){toast(e&&e.code==='unavailable'?'No connection. Load the checklist again when you have signal.':'Could not load the checklist: '+((e&&e.message)||'unknown error'))}
+  finally{S.loadingTpl=false;render()}
+}
+async function clearChecklist(ph){
+  if(readOnly())return;const rows=S.regs.tasks.filter(t=>t.phase===ph);let n=0;
+  for(const t of rows){const ok=await write({op:'delete',path:`audits/${S.auditId}/tasks/${t.id}`});if(ok)n++}
+  S.confirmClear=null;toast(`${n} task${n===1?'':'s'} removed.`);render();
 }
 async function tickTask(id){
   const r=S.regs.tasks.find(x=>x.id===id);if(!r||readOnly())return;
@@ -1298,6 +1320,17 @@ function viewAnalysis(){
    <p class="muted" style="margin:0 0 10px">Enter the limits from the client’s EPA permit (or the standard that applies). Final-outlet results are checked against them, and exceedances appear in the findings.</p>
    <div class="tablewrap" style="border:0"><table class="tbl limits" style="min-width:480px"><thead><tr><th>Parameter</th><th>Unit</th><th>Minimum</th><th>Maximum</th></tr></thead><tbody>${PARAMS.map(pr=>{const l=L[pr.id]||{};return `<tr><td>${esc(pr.label)}</td><td class="muted">${esc(pr.unit)}</td><td>${pr.id==='ph'?`<input class="inp" inputmode="decimal" data-limit="${pr.id}" data-lk="min" value="${esc(l.min??'')}" ${ro?'disabled':''} aria-label="${esc(pr.label)} minimum">`:''}</td><td><input class="inp" inputmode="decimal" data-limit="${pr.id}" data-lk="max" value="${esc(l.max??'')}" ${ro?'disabled':''} aria-label="${esc(pr.label)} maximum"></td></tr>`}).join('')}</tbody></table></div>
   </section>`;
+}
+async function deleteProject(){
+  const inp=$('#delConfirm');if(!inp||inp.value.trim().toUpperCase()!=='DELETE'||readOnly())return;
+  const id=S.auditId;const name=(S.audit&&S.audit.client)||'Project';const b=$('#delBtn');if(b){b.disabled=true;b.textContent='Deleting…'}
+  try{
+    if(!window.CE||!CE.deleteAudit)throw new Error('Deleting is not available in this version.');
+    S.unsubs.forEach(u=>u());S.unsubs=[];
+    await CE.deleteAudit(id);
+    S.audits=S.audits.filter(x=>x.id!==id);S.auditId=null;S.audit=null;S.confirmDel=false;ls.set('ce-audit',null);
+    S.noAutoPick=true;toast(`${name} deleted.`);go('audits');
+  }catch(e){toast(e&&e.code==='unavailable'?'No connection. Try again when you have signal.':'Could not delete the project: '+((e&&e.message)||'unknown error'));if(b){b.disabled=false;b.textContent='Delete project'}}
 }
 function saveLimit(pid,key,val){
   if(readOnly()||!S.audit)return;const v=val.trim();
@@ -1564,13 +1597,19 @@ document.addEventListener('click',async e=>{
   if(a==='scrim'&&t!==act)return;
   if(a==='flush')flush();
   if(a==='audits')go('audits');
-  if(a==='pick'){selectAudit(act.dataset.id);go('overview')}
+  if(a==='pick'){S.noAutoPick=false;selectAudit(act.dataset.id);go('overview')}
   if(a==='back-sections'){S.section=null;render();window.scrollTo({top:0})}
   if(a==='to-overview'){S.section=null;go('overview')}
   if(a==='add')openSheet(S.view,null,S.view==='costing'?{phase:S.phase==='remediation'?'Remediation and retrofit':S.phase==='monitoring'?'Monitoring and aftercare':'Full audit'}:null);
   if(a==='add-task')openSheet('tasks',null,{phase:S.phase,status:'To do',order:999});
   if(a==='load-template')loadTemplate(S.phase);
   if(a==='upgrade-tasks')upgradeTasks(S.phase);
+  if(a==='clear-ask'){S.confirmClear=S.phase;render()}
+  if(a==='clear-no'){S.confirmClear=null;render()}
+  if(a==='clear-yes')clearChecklist(S.phase);
+  if(a==='del-project-ask'){S.confirmDel=true;render()}
+  if(a==='del-project-no'){S.confirmDel=false;render()}
+  if(a==='del-project-yes')deleteProject();
   if(a==='build-costs')buildCosts();
   if(a==='gen-proposal')genProposal();
   if(a==='task-done'){const t=curTask();const rp=t&&reqProgress(t);if(rp&&rp.n<rp.t){toast('Answer the required questions first.');return}setTaskStatus('Done')}
@@ -1610,6 +1649,7 @@ document.addEventListener('change',e=>{
 });
 document.addEventListener('input',e=>{
   const t=e.target;
+  if(t.id==='delConfirm'){const b=$('#delBtn');if(b)b.disabled=t.value.trim().toUpperCase()!=='DELETE';return}
   if(t.id==='flt-q'){S.filters[S.view].q=t.value;const pos=t.selectionStart;render();const n=$('#flt-q');if(n){n.focus();try{n.setSelectionRange(pos,pos)}catch(_){}}return}
   if(t.dataset.q&&t.closest('#tqs')&&t.tagName!=='SELECT'){const key='t:'+t.dataset.q;clearTimeout(S.timers[key]);S.timers[key]=setTimeout(()=>{delete S.timers[key];commitTaskInput(t)},1200);return}
   if(t.dataset.q&&t.closest('#qs')&&t.tagName!=='SELECT'){const key='q:'+t.dataset.q;clearTimeout(S.timers[key]);S.timers[key]=setTimeout(()=>{delete S.timers[key];commitInput(t)},1400)}

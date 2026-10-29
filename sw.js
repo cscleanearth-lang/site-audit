@@ -1,5 +1,5 @@
 /* Keeps the app usable on site with poor signal: network first, cached copy when offline. */
-const V='ce-audit-sb-v6';
+const V='ce-audit-sb-v7';
 const SHELL=['./','index.html','config.js','ce-backend.js','vendor/supabase.js','vendor/591.supabase.js','vendor/exceljs.min.js','vendor/docx.umd.js','proposal.js','manifest.webmanifest','icon.svg'];
 self.addEventListener('install',e=>{e.waitUntil(caches.open(V).then(c=>c.addAll(SHELL)).then(()=>self.skipWaiting()))});
 self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==V).map(k=>caches.delete(k)))).then(()=>self.clients.claim()))});

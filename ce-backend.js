@@ -135,6 +135,30 @@
       onSnapshot:function(){return function(){}}};
   }
 
+  // Save many records in one request (used for loading a whole checklist at once)
+  async function setMany(items){
+    if(!items.length)return;
+    const rows=items.map(function(it){return rowFor(parse(it.path),it.data)});
+    await call(function(){return sb.from(TABLE).upsert(rows,{onConflict:'audit_id,kind,rec_key'})});
+    items.forEach(function(it){var p=parse(it.path);cache[ck(p)]={data:it.data,mod:Date.now()}});
+    var sc={};items.forEach(function(it){var p=parse(it.path);sc[p.kind==='audits'?'audits':'A:'+p.audit]=1});Object.keys(sc).forEach(persist);notify();
+  }
+  // Delete a whole project: every record with its id, then its photos
+  async function deleteAudit(id){
+    await call(function(){return sb.from(TABLE).delete().eq('audit_id',id)});
+    var removed=0;
+    try{
+      var folder=safe(id),all=[],offset=0;
+      for(;;){var r=await sb.storage.from(BUCKET).list(folder,{limit:100,offset:offset});if(r.error||!r.data||!r.data.length)break;
+        all=all.concat(r.data.map(function(f){return folder+'/'+f.name}));if(r.data.length<100)break;offset+=100}
+      for(var i=0;i<all.length;i+=100){var rr=await sb.storage.from(BUCKET).remove(all.slice(i,i+100));if(!rr.error)removed+=Math.min(100,all.length-i)}
+    }catch(e){}
+    Object.keys(cache).forEach(function(k){if(k.split('|')[1]===id)delete cache[k]});
+    try{localStorage.removeItem('ce-cache-A:'+id)}catch(e){}
+    persist('audits');notify(true);
+    return {photosRemoved:removed};
+  }
+
   /* ---------- user, photos, files ---------- */
   var user={
     id:async function(){return me?me.id:null},
@@ -163,5 +187,5 @@
   }};
 
   window.CE={init:init,configured:configured,signIn:signIn,signOut:signOut,
-    db:{collection:collection,doc:doc},user:user,assets:assets,downloads:downloads,photoURL:photoURL,refresh:poll};
+    db:{collection:collection,doc:doc,setMany:setMany},deleteAudit:deleteAudit,user:user,assets:assets,downloads:downloads,photoURL:photoURL,refresh:poll};
 })();

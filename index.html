@@ -210,6 +210,8 @@ textarea.inp{min-height:80px;resize:vertical}
 .chev{color:var(--muted);font-size:20px;padding:0 2px}
 .dangerzone{border-color:var(--bad-soft)}
 .dangerzone .cardtitle{color:var(--bad)}
+.brandimg{display:flex;align-items:center;justify-content:center;min-height:70px;padding:10px;border:1px dashed var(--line);border-radius:8px;background:#fff;margin:4px 0 8px}
+.brandimg img{max-height:110px;max-width:100%;object-fit:contain}
 .confirm{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:14px}
 
 /* audits list */
@@ -900,7 +902,7 @@ async function boot(){
       if(pick)selectAudit(pick.id);else render();
     }else{S.audit=S.audits.find(a=>a.id===S.auditId);renderHeader();if(S.view==='overview'||S.view==='audits')render()}
   },e=>toast('Could not load audits: '+((e&&e.message)||'unknown error')));
-  setStatus();flush();
+  setStatus();flush();loadBranding();
 }
 function viewAuth(){
   const a=S.auth||{};
@@ -973,8 +975,8 @@ $('#subtabs').addEventListener('click',e=>{const b=e.target.closest('button[data
 $('#switchBtn').addEventListener('click',()=>go('audits'));
 $('#saveStatus').addEventListener('click',()=>{if(S.outbox.length)flush()});
 function go(v,opts={}){
-  if(v!=='overview'&&v!=='audits'&&v!=='task'){S.phase=viewPhase(v);S.lastView=S.lastView||{};S.lastView[S.phase]=v;ls.set('ce-phase',S.phase)}
-  S.view=v;if(v!=='audits')ls.set('ce-view',v);if(opts.section!==undefined)S.section=opts.section;render();window.scrollTo({top:0})}
+  if(v!=='overview'&&v!=='audits'&&v!=='task'&&v!=='settings'){S.phase=viewPhase(v);S.lastView=S.lastView||{};S.lastView[S.phase]=v;ls.set('ce-phase',S.phase)}
+  S.view=v;if(v!=='audits'&&v!=='settings')ls.set('ce-view',v);if(opts.section!==undefined)S.section=opts.section;render();window.scrollTo({top:0})}
 
 function render(){
   renderHeader();renderTabs();setStatus();
@@ -985,6 +987,7 @@ function render(){
   if(S.canWrite===false)banner=`<div class="banner info">You can view this project but not edit it. Ask the app manager to check your account.</div>`;
   if(S.outbox.length)banner+=`<div class="banner">${S.outbox.length} change${S.outbox.length>1?'s are':' is'} stored on this device and not yet saved. They will be sent when the connection returns. <button class="btn ghost" type="button" data-act="flush">Retry now</button></div>`;
   if(S.view==='audits'){m.innerHTML=banner+viewAudits();return}
+  if(S.view==='settings'){m.innerHTML=banner+viewSettings();return}
   if(!S.audit){m.innerHTML=banner+(S.auditsLoaded?`<div class="empty"><b>No project yet</b>Create the first client project to start recording.<div style="margin-top:12px"><button class="btn primary" type="button" data-act="audits">Create a project</button></div></div>`:`<div class="empty"><b>Loading projects</b>Entries from the whole team appear here.</div>`);return}
   if(S.view==='overview')m.innerHTML=banner+viewOverview();
   else if(S.view==='questions'){m.innerHTML=banner+viewQuestions();bindForm()}
@@ -1000,7 +1003,7 @@ function render(){
 /* ---------- audits list ---------- */
 function viewAudits(){
   const list=S.audits.slice().sort((a,b)=>(b.visitDate||'').localeCompare(a.visitDate||''));
-  return `<div class="sechead"><h2>Projects</h2></div>
+  return `<div class="sechead"><h2>Projects</h2><button class="btn" type="button" data-view-go="settings">Company settings</button></div>
   <div class="grid2">
    <div class="stack">${list.length?`<div class="audits">${list.map(a=>`<button class="item" type="button" data-act="pick" data-id="${esc(a.id)}"><span><span class="t">${esc(a.client||'Untitled')}</span><br><span class="m">${esc(a.site||'')}${a.visitDate?' · '+esc(fmtDate(a.visitDate)):''}</span></span>${a.id===S.auditId?'<span class="pill info">Open</span>':`<span class="pill">${esc((phaseOf(a.phase||'pre')||PHASES[0]).short)}</span>`}</button>`).join('')}</div>`:`<div class="empty"><b>No projects yet</b>Create one with the form.</div>`}</div>
    <form class="card" id="newAudit"><div class="cardtitle">New client project</div>
@@ -1095,6 +1098,7 @@ function viewOverview(){
     <section class="card"><div class="cardtitle">Findings so far</div>
      ${F.length?`<ul class="flags">${F.map(([s,t])=>`<li><span class="sev ${s}">${s==='bad'?'Critical':'Concern'}</span><span>${esc(t)}</span></li>`).join('')}</ul>`:`<p class="muted" style="margin:0">Findings appear here automatically as answers, equipment conditions and field readings are entered.</p>`}
     </section>
+    ${S.downloads?`<section class="card"><div class="cardtitle">Documents</div><p class="muted" style="margin:0 0 10px">Word documents built from everything entered, on your letterhead. ${S.branding&&(S.branding.logo||S.branding.header_image)?'':'<button class="btn ghost small" type="button" data-view-go="settings">Add your logo and letterhead</button>'}</p><div class="row"><button class="btn primary" type="button" data-act="gen-report">Pre-audit report (.docx)</button><button class="btn" type="button" data-act="gen-proposal">Audit proposal (.docx)</button></div></section>`:''}
     ${S.downloads?`<section class="card"><div class="cardtitle">Export to SharePoint</div><p class="muted" style="margin:0 0 10px">One Excel workbook with a named table for each dataset. Save it into the synced SharePoint <b>Incoming</b> folder and Power Automate posts it to Teams.</p><div class="row"><button class="btn primary" type="button" data-act="export-xlsx">Download workbook (.xlsx)</button></div><details style="margin-top:12px"><summary class="muted" style="cursor:pointer">Other formats</summary><div class="row" style="margin-top:10px"><button class="btn" type="button" data-act="export-q">Questionnaire (CSV)</button>${REG_KEYS.map(k=>`<button class="btn" type="button" data-act="export-csv" data-k="${k}">${REGS[k].label} (CSV)</button>`).join('')}<button class="btn" type="button" data-act="export-json">Everything (JSON)</button></div></details></section>`:''}
     <section class="card"><div class="cardtitle">Equipment condition</div>
      ${eq.length?`<div class="cbar">${Object.entries(cond).filter(([,v])=>v).map(([k,v])=>`<i style="width:${v/eq.length*100}%;background:${colors[k]}" title="${k}: ${v}"></i>`).join('')}</div>
@@ -1106,7 +1110,7 @@ function viewOverview(){
      <div class="prog">${SECTIONS.map(s=>{const p=secProgress(s);return `<button type="button" data-sec="${s.id}"><span>${esc(s.title)}</span><span class="frac">${p.n}/${p.t}</span><span class="meter"><i class="${p.n===p.t?'full':''}" style="width:${p.t?p.n/p.t*100:0}%"></i></span></button>`}).join('')}</div>
     </section>
     <section class="card"><div class="cardtitle">Project details</div>
-     ${vf('client','Client')}${vf('site','Site')}${vf('sector','Industry / sector','text','e.g. Dairy, brewery, textiles')}${vf('code','Client code for sample codes','text','e.g. DFM (defaults to the client’s initials)')}${vf('visitDate','Pre-audit visit date','date')}${vf('team','Cleanearth team','text','Names and roles')}${vf('status','Status','text','Planned, In progress, Complete')}${vf('purpose','Purpose of visit','textarea')}
+     ${vf('client','Client')}<div class="f"><span class="ql">Client logo</span><span class="hint">Shown on the cover of reports and proposals.</span><div class="brandimg">${a.client_logo&&a.client_logo.src?`<img src="${a.client_logo.src}" alt="Client logo">`:'<span class="muted">None uploaded</span>'}</div>${ro?'':`<div class="row"><label class="btn" for="cl-logo">${a.client_logo?'Replace':'Upload logo'}<input id="cl-logo" type="file" accept="image/png,image/jpeg" hidden data-clientlogo="1"></label>${a.client_logo?'<button class="btn ghost" type="button" data-act="rm-clientlogo">Remove</button>':''}</div>`}</div>${vf('site','Site')}${vf('location','Site address / location','text','e.g. Spintex Road, Accra')}${vf('gps','GPS coordinates','text','e.g. 5.6365, -0.1110')}${vf('sector','Industry / sector','text','e.g. Dairy, brewery, textiles')}${vf('code','Client code for sample codes','text','e.g. DFM (defaults to the client’s initials)')}${vf('visitDate','Pre-audit visit date','date')}${vf('team','Cleanearth team','text','Names and roles')}${vf('status','Status','text','Planned, In progress, Complete')}${vf('purpose','Purpose of visit','textarea')}
     </section>
     ${ro?'':`<section class="card dangerzone"><div class="cardtitle">Delete project</div>
      ${S.confirmDel?`<p style="margin:0 0 10px">This permanently deletes <b>${esc(a.client||'this project')}</b>: every answer, register, checklist, lab result and photo. Nobody can undo it. Download the workbook first if you want a copy.</p>
@@ -1276,9 +1280,84 @@ function costTotals(){
     ${calcRow([[money(p.audit),'Audit'],[p.remHi?`${money(p.remLo)} – ${money(p.remHi)}`:'–','Remediation incl. design'],[money(p.mon),'Monitoring'],[p.hi?`${money(p.lo)} – ${money(p.hi)}`:'–','Whole programme']])}
     <p class="muted" style="margin:10px 0 0;font-size:13px">Remediation and monitoring figures come from the Proposal task “Estimate the full programme”.</p></section></div>`;
 }
+async function loadDocTools(){await loadScript('vendor/docx.umd.js');await loadScript('proposal.js');await loadBranding()}
+async function genReport(){
+  toast('Preparing the pre-audit report…');
+  try{await loadDocTools()}catch(e){toast('Could not load the document tools. Check the connection and try again.');return}
+  try{const blob=await window.buildSiteReport();save(`CE_PreAudit_Report_${slug()}_${new Date().toISOString().slice(0,10)}.docx`,blob);if(blob.photoFailed)toast(`${blob.photoFailed} photo${blob.photoFailed>1?'s':''} could not be loaded and ${blob.photoFailed>1?'were':'was'} left out. Try again with signal.`)}
+  catch(e){console.error(e);toast('Could not build the report: '+((e&&e.message)||'unknown error'))}
+}
+/* ---------- company settings: logo, letterhead, footer, details ---------- */
+const BRAND_PATH='audits/_company/settings/branding';
+async function loadBranding(force){
+  if(S.branding&&!force)return S.branding;
+  if(!S.branding)S.branding=ls.get('ce-branding',null);
+  if(!S.db)return S.branding||{};
+  try{const snap=await S.db.doc(BRAND_PATH).get();if(snap.exists){S.branding=snap.data();ls.set('ce-branding',S.branding)}else if(!S.branding)S.branding={}}catch(e){if(!S.branding)S.branding={}}
+  return S.branding;
+}
+async function saveBranding(patch){
+  if(readOnly())return;S.branding={...(S.branding||{}),...patch,updatedAt:Date.now()};ls.set('ce-branding',S.branding);
+  await write({op:'set',path:BRAND_PATH,data:S.branding});
+}
+const BUILTIN_IMG={logo:'brand/logo.png',header_image:'brand/header.png',footer_image:'brand/footer.jpg'};
+function brandImgHTML(key,label,hint){
+  const im=(S.branding||{})[key];const ro=readOnly();const bi=BUILTIN_IMG[key];
+  return `<div class="f"><span class="ql">${label}</span><span class="hint">${hint}</span>
+   <div class="brandimg">${im&&im.src?`<img src="${im.src}" alt="${esc(label)}">`:bi?`<img src="${bi}" alt="${esc(label)}">`:'<span class="muted">None uploaded</span>'}</div>
+   ${!(im&&im.src)&&bi?'<span class="hint">Cleanearth built-in version. Upload to replace it.</span>':''}
+   <div class="row">${ro?'':`<label class="btn" for="bi-${key}">${im?'Replace':'Upload image'}<input id="bi-${key}" type="file" accept="image/png,image/jpeg" hidden data-brandimg="${key}"></label>${im?`<button class="btn ghost" type="button" data-brandrm="${key}">${bi?'Use built-in':'Remove'}</button>`:''}`}</div></div>`;
+}
+function viewSettings(){
+  if(!window.CE_BRAND_DEFAULTS){loadScript('proposal.js').then(()=>{if(S.view==='settings')render()}).catch(()=>{})}
+  if(!S.branding){loadBranding().then(()=>{if(S.view==='settings')render()});return `<div class="empty"><b>Loading company settings…</b></div>`}
+  const B=S.branding;const ro=readOnly();const DEF=window.CE_BRAND_DEFAULTS||{};
+  const f=(id,label,ph='',type='text')=>`<div class="f"><label class="ql" for="bs-${id}">${label}</label>${type==='textarea'?`<textarea class="inp" id="bs-${id}" data-brand="${id}" placeholder="${esc(DEF[id]||ph)}" ${ro?'disabled':''}>${esc(B[id]||'')}</textarea>`:`<input class="inp" id="bs-${id}" data-brand="${id}" type="${type}" value="${esc(B[id]||'')}" placeholder="${esc(DEF[id]||ph)}" ${ro?'disabled':''}>`}</div>`;
+  return `<button class="btn ghost" type="button" data-view-go="audits" style="margin-left:-8px">← Projects</button>
+  <div class="sechead"><div><h2>Company settings</h2><p class="intro" style="margin:4px 0 0">Used on every generated report and proposal, for all projects. The Cleanearth letterhead, logo and footer are built in; leave a field blank to use the value shown in grey.</p></div></div>
+  <div class="grid2">
+   <section class="card"><div class="cardtitle">Company details</div>
+    ${f('company_name','Company name','Cleanearth')}${f('unit','Business unit or department','Water Services')}${f('address','Address','e.g. 12 Example Street, East Legon, Accra')}
+    ${f('phone','Phone','+233 …')}${f('email','Email','info@…')}${f('website','Website','www.…')}${f('reg_no','Registration or TIN','')}
+    ${f('signatory_name','Person who signs proposals','')}${f('signatory_title','Their position','e.g. Head of Water Services')}</section>
+   <div class="stack">
+    <section class="card"><div class="cardtitle">Letterhead</div>
+     <div class="f" style="padding-top:0;border:0"><span class="ql">Page header</span><div class="chips" data-q="header_mode" data-kind="single" id="bs-header_mode">${['Logo and company details','Letterhead image'].map(o=>`<button type="button" data-v="${o}" aria-pressed="${(B.header_mode||'Letterhead image')===o}" ${ro?'disabled':''}>${o}</button>`).join('')}</div>
+      <span class="hint">“Logo and company details” puts your logo on the left and the details above on the right. “Letterhead image” uses your full letterhead banner instead.</span></div>
+     ${brandImgHTML('logo','Logo','PNG with a transparent background works best.')}
+     ${brandImgHTML('header_image','Letterhead banner (optional)','The top strip of your letterhead as a wide image, about 6:1. Used when “Letterhead image” is selected.')}</section>
+    <section class="card"><div class="cardtitle">Footer</div>
+     ${brandImgHTML('footer_image','Footer image (optional)','The bottom strip of your letterhead, if it has one.')}
+     ${f('footer_text','Footer text','Leave blank to use the company name and registration number')}</section>
+    <section class="card"><div class="cardtitle">Style</div>
+     <div class="f" style="padding-top:0;border:0"><label class="ql" for="bs-color">Brand colour</label><div class="row"><input type="color" id="bs-color" data-brand="color" value="${esc(B.color||'#233F8C')}" ${ro?'disabled':''} style="width:56px;height:40px;border:0;background:none;padding:0"><span class="mono muted">${esc(B.color||'#233F8C')}</span></div><span class="hint">Used for headings, table headers and lines.</span></div>
+     ${f('font','Font','Candara')}</section>
+   </div></div>`;
+}
+async function readLogo(file,max){
+  const bmp=await createImageBitmap(file);const sc=Math.min(1,max/Math.max(bmp.width,bmp.height));
+  const c=document.createElement('canvas');c.width=Math.round(bmp.width*sc);c.height=Math.round(bmp.height*sc);c.getContext('2d').drawImage(bmp,0,0,c.width,c.height);
+  let src=c.toDataURL(file.type==='image/png'?'image/png':'image/jpeg',0.88);if(src.length>700000)src=c.toDataURL('image/jpeg',0.8);
+  return {src,w:c.width,h:c.height};
+}
+async function clientLogo(file){
+  if(!file||readOnly()||!S.audit)return;
+  try{const im=await readLogo(file,600);S.audit.client_logo=im;await write({op:'update',path:'audits/'+S.auditId,data:{client_logo:im}});render();toast('Client logo saved.')}
+  catch(e){toast('Could not read that image. Use a PNG or JPG file.')}
+}
+async function brandImage(key,file){
+  if(!file)return;
+  try{
+    const bmp=await createImageBitmap(file);const max=key==='logo'?600:1800;const sc=Math.min(1,max/Math.max(bmp.width,bmp.height));
+    const c=document.createElement('canvas');c.width=Math.round(bmp.width*sc);c.height=Math.round(bmp.height*sc);c.getContext('2d').drawImage(bmp,0,0,c.width,c.height);
+    const png=file.type==='image/png';let src=c.toDataURL(png?'image/png':'image/jpeg',0.88);
+    if(src.length>900000)src=c.toDataURL('image/jpeg',0.8);
+    await saveBranding({[key]:{src,w:c.width,h:c.height}});render();toast('Saved.');
+  }catch(e){toast('Could not read that image. Use a PNG or JPG file.')}
+}
 async function genProposal(){
   toast('Preparing the proposal…');
-  try{await loadScript('vendor/docx.umd.js');await loadScript('proposal.js')}catch(e){toast('Could not load the proposal tools. Check the connection and try again.');return}
+  try{await loadDocTools()}catch(e){toast('Could not load the proposal tools. Check the connection and try again.');return}
   try{const blob=await window.buildProposal();const d=new Date().toISOString().slice(0,10);save(`CE_Proposal_${slug()}_${d}.docx`,blob);if(blob.photoFailed)toast(`${blob.photoFailed} photo${blob.photoFailed>1?'s':''} could not be loaded and ${blob.photoFailed>1?'were':'was'} left out. Try again with signal.`)}
   catch(e){console.error(e);toast('Could not build the proposal: '+((e&&e.message)||'unknown error'))}
 }
@@ -1580,6 +1659,7 @@ document.addEventListener('click',async e=>{
   const pg=t.closest('[data-phase-go]');if(pg){const P=phaseOf(pg.dataset.phaseGo);S.phase=P.id;go(P.views[0][0]);return}
   const sp=t.closest('[data-set-phase]');if(sp){saveAudit('phase',sp.dataset.setPhase);render();return}
   const ed=t.closest('[data-edit]');if(ed){openSheet(ed.dataset.k||S.view,ed.dataset.edit);return}
+  const brm=t.closest('[data-brandrm]');if(brm){saveBranding({[brm.dataset.brandrm]:null}).then(render);return}
   const trm=t.closest('[data-trmphoto]');if(trm){removeTaskPhoto(trm.dataset.trmphoto);return}
   const rm=t.closest('[data-rmphoto]');if(rm&&S.sheet){const f=rm.dataset.field;S.sheet.data[f]=(S.sheet.data[f]||[]).filter(x=>x!==rm.dataset.rmphoto);S.sheet.dirty=true;renderSheetPhotos();return}
   const chip=t.closest('.chips button');
@@ -1589,6 +1669,7 @@ document.addEventListener('click',async e=>{
     if(g.dataset.kind==='single'){const on=chip.getAttribute('aria-pressed')==='true';g.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed','false'));if(!on)chip.setAttribute('aria-pressed','true');val=on?'':chip.dataset.v}
     else{chip.setAttribute('aria-pressed',String(chip.getAttribute('aria-pressed')!=='true'));val=[...g.querySelectorAll('button[aria-pressed="true"]')].map(b=>b.dataset.v)}
     if(g.closest('#planCard')){S.plan[qid]=val}
+    else if(g.id==='bs-header_mode'){saveBranding({header_mode:val})}
     else if(g.closest('#tqs')){saveTaskAnswer(qid,val)}
     else if(g.closest('#sheetBody')){S.sheet.data[qid]=val;S.sheet.dirty=true}else saveAnswer(qid,val);
     return;
@@ -1612,6 +1693,8 @@ document.addEventListener('click',async e=>{
   if(a==='del-project-yes')deleteProject();
   if(a==='build-costs')buildCosts();
   if(a==='gen-proposal')genProposal();
+  if(a==='gen-report')genReport();
+  if(a==='rm-clientlogo'&&S.audit&&!readOnly()){S.audit.client_logo=null;write({op:'update',path:'audits/'+S.auditId,data:{client_logo:null}});render()}
   if(a==='task-done'){const t=curTask();const rp=t&&reqProgress(t);if(rp&&rp.n<rp.t){toast('Answer the required questions first.');return}setTaskStatus('Done')}
   if(a==='task-reopen'||a==='task-progress')setTaskStatus('In progress');
   if(a==='task-skip')setTaskStatus('Not needed');
@@ -1635,6 +1718,9 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&S.sheet){S.sheet=nu
 document.addEventListener('change',e=>{
   const t=e.target;
   if(t.dataset.upload){upload(t.dataset.upload,[...t.files]);t.value='';return}
+  if(t.dataset.clientlogo){clientLogo(t.files[0]);t.value='';return}
+  if(t.dataset.brandimg){brandImage(t.dataset.brandimg,t.files[0]);t.value='';return}
+  if(t.dataset.brand){saveBranding({[t.dataset.brand]:t.value.trim()});if(t.dataset.brand==='color'){const sp=t.nextElementSibling;if(sp)sp.textContent=t.value}return}
   if(t.dataset.tupload){uploadTaskPhotos([...t.files]);t.value='';return}
   if(t.id==='flt-a'){S.filters[S.view].a=t.value;render();return}
   if(['plan-n','lab-which','lab-start'].includes(t.id)){S.plan[t.id]=t.value;return}

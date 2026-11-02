@@ -79,5 +79,6 @@ On phones, open that address in Safari or Chrome, sign in once, then choose **Ad
 | `config.js` | Your Supabase project address and public key |
 | `schema.sql` | One-time database setup, run in the Supabase SQL Editor |
 | `sw.js` | Keeps the app available offline |
-| `proposal.js` | Builds the Word proposal |
+| `proposal.js` | Builds the Word pre-audit report and proposal |
+| `brand/` | Built-in Cleanearth letterhead header, footer and logo (replace from Company settings) |
 | `vendor/` | Supabase client 2.45.4, ExcelJS 4.4.0 and docx 8.5.0 |

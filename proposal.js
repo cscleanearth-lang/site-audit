@@ -331,7 +331,11 @@
     const validUntil=validity?(()=>{const d=new Date(today);d.setDate(d.getDate()+validity);return d.toISOString().slice(0,10)})():null;
     const audLines=S.regs.costing.filter(c=>(c.phase||'Full audit')==='Full audit'&&costAmount(c)!==null).sort((x,y)=>(x.order??99)-(y.order??99));
     const ohF=1+n0(R.overhead)/100;const sub=audLines.reduce((x,c)=>x+costAmount(c),0);const cont=sub*n0(R.contingency)/100;
-    const feeRows=audLines.map(c=>[c.item||c.category||'Item',qf(num(c.qty))+' '+(c.unit||''),gh(num(c.rate)*ohF),gh(costAmount(c)*ohF)]);
+    const unitTxt=(u,q)=>{u=u||'';if(q!==1)return u;const m={analyses:'analysis',samples:'sample',sets:'set',days:'day','person-days':'person-day','meter-days':'meter-day',containers:'container',sessions:'session'};return m[u]||u};
+    const SECTIONS_ORDER=['Field and laboratory programme','Process tests','Jar tests','Other'];
+    const bySec={};audLines.forEach(c=>{const k=SECTIONS_ORDER.includes(c.section)?c.section:(c.section||'Field and laboratory programme');(bySec[k]=bySec[k]||[]).push(c)});
+    const secKeys=[...SECTIONS_ORDER.filter(k=>bySec[k]),...Object.keys(bySec).filter(k=>!SECTIONS_ORDER.includes(k))];
+    const itemised=(TM.fee_view||'Itemised (every line)')!=='Summarised by group';
     const net=(sub+cont)*ohF;const tax=net*n0(R.tax)/100;
     const METHOD={
       'WWTP performance':'Flow-proportional 24-hour composite samples and grab samples at each treatment stage, so that the removal achieved by every unit can be measured against its design. Field readings of pH, temperature, dissolved oxygen and conductivity will be taken daily.',
@@ -398,6 +402,11 @@
     kids.push(H('6. Methodology'));
     kids.push(P('The audit follows the water from source to discharge, so that problems at the treatment plant can be traced back to where they start.'));
     (SC.areas||Object.keys(METHOD)).forEach(x=>{if(METHOD[x]){kids.push(H2(x));kids.push(P(METHOD[x]))}});
+    const PT=ta('proposal','proctests'),JT=ta('proposal','jartests');
+    const ptI=LINESETS.proc.inputs(PT);const jtI=LINESETS.jar.inputs(JT);
+    const PDESC={'SV30 and SVI':'Settled sludge volume after 30 minutes and the sludge volume index, to assess how well the activated sludge settles.','Microscopy':'Microscopic examination of the sludge to identify filamentous bacteria, floc structure and protozoa, which indicate the health of the biology.','Oxygen uptake rate':'The rate at which the biomass uses oxygen, to measure biological activity and check for inhibition or overload.','DAF performance test':'Paired inlet and outlet samples with a record of air pressure, recycle and chemical dosing, to measure removal of solids, fats and COD.','Clarifier assessment':'Sludge blanket depth, surface loading and effluent solids, to check whether the clarifier is overloaded.'};
+    if(ptI.tests.length&&linesOn('proc').length){kids.push(H2('Process tests'));kids.push(P(`${ptI.rounds} rounds of process tests will be carried out on ${ptI.reactors} reactor${ptI.reactors>1?'s':''}:`));ptI.tests.forEach(t=>kids.push(bul([B_(t+': '),PDESC[t]||''])))}
+    if(jtI.chems.length&&linesOn('jar').length){kids.push(H2('Jar tests'));kids.push(P(`Jar tests will compare ${jtI.chems.length} treatment chemical${jtI.chems.length>1?'s':''} over ${jtI.rounds} session${jtI.rounds>1?'s':''}, with ${jtI.series} dose series of six jars for each chemical in each session. The supernatant from the best ${jtI.best} jars in each series will be analysed for ${jtI.params.join(', ')}. The results will set the optimum product, dose and pH, and show whether a change of chemical could improve performance or reduce cost.`));kids.push(P([B_('Chemicals to be trialled: '),jtI.chems.join(', ')+'.']))}
     kids.push(H2('Laboratory analysis and data quality'));
     kids.push(P('Samples will be preserved, kept cool and delivered under chain of custody to an accredited laboratory within the holding times for each parameter. Every sample carries a unique code. Results will be checked for consistency before analysis.'));
 
@@ -409,12 +418,27 @@
     kids.push(P(TL.start?`Subject to approval, work can start on ${dateTxt(TL.start)}${wk.end?`, with the final report expected by ${dateTxt(wk.end)}`:''}.`:'The start date will be agreed on acceptance of this proposal.',{spacing:{before:120,after:120}}));
 
     kids.push(H('9. Fees for the audit'));
-    if(feeRows.length){
-      const rows=[['Item','Quantity','Rate','Amount'],...feeRows];
-      if(cont)rows.push(['Contingency','','',gh(cont*ohF)]);
-      rows.push(['Total excluding taxes','','',gh(net)]);const bold=[rows.length-1];
-      if(n0(R.tax)){rows.push([`VAT and levies (${n0(R.tax)}%)`,'','',gh(tax)]);rows.push(['Total','','',gh(net+tax)]);bold.push(rows.length-1)}
-      kids.push(table([4026,1700,1500,1800],rows,{right:[1,2,3],boldRows:bold}));
+    if(audLines.length){
+      kids.push(P(itemised?'The fees are set out in full below, by part of the work.':'The fees are summarised below by type of cost, for each part of the work.'));
+      const subs=[];let n=0;
+      secKeys.forEach(k=>{
+        const L=bySec[k];const sub=L.reduce((x,c)=>x+costAmount(c)*ohF,0);subs.push([k,sub]);
+        kids.push(H2(`9.${++n} ${k}`));
+        if(itemised){
+          kids.push(table([4426,1500,1500,1600],[['Item','Quantity','Rate','Amount'],...L.map(c=>[c.item||c.category||'Item',qf(num(c.qty))+' '+unitTxt(c.unit,num(c.qty)),gh(num(c.rate)*ohF),gh(costAmount(c)*ohF)]),[`Subtotal: ${k.toLowerCase()}`,'','',gh(sub)]],{right:[1,2,3],boldRows:[L.length+1]}));
+        }else{
+          const g={};L.forEach(c=>{const kk=c.category||'Other';g[kk]=(g[kk]||0)+costAmount(c)*ohF});
+          const rows=Object.entries(g);
+          kids.push(table([W-2200,2200],[['Cost group','Amount'],...rows.map(([kk,v])=>[kk,gh(v)]),[`Subtotal: ${k.toLowerCase()}`,gh(sub)]],{right:[1],boldRows:[rows.length+1]}));
+        }
+        kids.push(gap());
+      });
+      kids.push(H2(`9.${++n} Fee summary`));
+      const rows=[['Part of the work','Amount'],...subs.map(([k,v])=>[k,gh(v)])];
+      if(cont)rows.push(['Contingency',gh(cont*ohF)]);
+      rows.push(['Total excluding taxes',gh(net)]);const bold=[rows.length-1];
+      if(n0(R.tax)){rows.push([`VAT and levies (${n0(R.tax)}%)`,gh(tax)]);rows.push(['Total',gh(net+tax)]);bold.push(rows.length-1)}
+      kids.push(table([W-2400,2400],rows,{right:[1],boldRows:bold}));
     }else kids.push(P('The fee will be confirmed once the scope and rates are finalised.'));
     if(TM.payment)kids.push(P([B_('Payment terms: '),TM.payment+'.'],{spacing:{before:120,after:80}}));
     if(validity)kids.push(P(`This proposal is valid for ${validity} days from the date above.`));

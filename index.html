@@ -212,6 +212,11 @@ textarea.inp{min-height:80px;resize:vertical}
 .dangerzone .cardtitle{color:var(--bad)}
 .brandimg{display:flex;align-items:center;justify-content:center;min-height:70px;padding:10px;border:1px dashed var(--line);border-radius:8px;background:#fff;margin:4px 0 8px}
 .brandimg img{max-height:110px;max-width:100%;object-fit:contain}
+.tbl.lines{min-width:720px}
+.tbl.lines td{vertical-align:top}
+.tbl.lines .inp{min-height:34px;padding:6px 8px}
+.tbl.lines tr.off td{opacity:.45}
+.tbl.lines input[type=checkbox]{width:20px;height:20px;margin-top:6px}
 .confirm{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:14px}
 
 /* audits list */
@@ -492,7 +497,8 @@ const REGS={
  costing:{label:'Costing',one:'cost line',intro:'Price the work line by line. Totals by phase update as you go.',fields:[
   {id:'item',label:'Item',type:'text',ph:'e.g. COD analysis, 24 samples'},
   {id:'phase',label:'Phase',type:'chips',options:['Full audit','Remediation and retrofit','Monitoring and aftercare']},
-  {id:'category',label:'Category',type:'select',options:['Staff time','Laboratory analysis','Equipment hire','Transport and logistics','Materials and consumables','Equipment supply','Civil and installation works','Subcontractor','Other']},
+  {id:'section',label:'Cost section',type:'select',options:['Field and laboratory programme','Process tests','Jar tests','Other'],hint:'Each section is its own fee table in the proposal.'},
+  {id:'category',label:'Category',type:'select',options:['Staff time','Laboratory analysis','Equipment hire','Chemicals and reagents','Transport and logistics','Materials and consumables','Equipment supply','Civil and installation works','Subcontractor','Other']},
   {id:'qty',label:'Quantity',type:'number'},
   {id:'unit',label:'Unit',type:'text',ph:'e.g. days, samples, units'},
   {id:'rate',label:'Rate per unit',type:'number',unit:'GHS'},
@@ -557,7 +563,6 @@ function auditCostLines(){
   if(a.metering==='Hire portable meters')add('Portable flow meter hire','Equipment hire',n0(a.meters)*fd,'meter-days',n0(r.meter_rate));
   add('Transport','Transport and logistics',fd,'days',n0(r.transport));
   add('Sampling consumables, cool boxes and PPE','Materials and consumables',1,'lot',n0(r.consumables));
-  if((a.tests||[]).length)add('Process tests and jar tests','Materials and consumables',1,'lot',n0(r.tests_cost));
   return L;
 }
 function costSummary(){
@@ -575,6 +580,86 @@ function programmeRange(){
   return {audit,remLo:lo*(1+dp),remHi:hi*(1+dp),mon,lo:audit+lo*(1+dp)+mon,hi:audit+hi*(1+dp)+mon};
 }
 function weeksPlan(a){a=a||ta('proposal','timeline');const w=n0(a.mob_weeks)+n0(a.field_weeks)+n0(a.lab_weeks)+n0(a.report_weeks);let end='';if(a.start&&w){const d=new Date(a.start+'T00:00:00');d.setDate(d.getDate()+w*7);end=d.toISOString().slice(0,10)}return {w,end}}
+
+/* ---------- detailed line-item costing (process tests, jar tests) ---------- */
+const LINE_GROUPS=['Staff time','Laboratory analysis','Equipment hire','Chemicals and reagents','Materials and consumables','Transport and logistics','Other'];
+const PROC_TESTS=['SV30 and SVI','Microscopy','Oxygen uptake rate','DAF performance test','Clarifier assessment'];
+const JAR_CHEMS=[['Ferric chloride','L'],['Aluminium sulphate (alum)','kg'],['Polyaluminium chloride (PAC)','L'],['Anionic polymer (flocculant)','kg'],['Cationic polymer (flocculant)','kg'],['Hydrated lime','kg'],['Caustic soda','kg'],['Sulphuric acid (pH correction)','L']];
+const tHas=t=>I=>I.tests.includes(t);
+const LINESETS={
+ proc:{task:'proctests',section:'Process tests',
+  inputs:a=>{const sc=ta('proposal','scope');const tests=Array.isArray(a.tests)?a.tests:(sc.tests||[]).filter(x=>PROC_TESTS.includes(x));
+    return {tests,rounds:num(a.rounds)??(n0(sc.days)||5),reactors:num(a.reactors)??1}},
+  rows:I=>[
+   {key:'mlss',item:'MLSS and MLVSS analysis (laboratory)',unit:'analyses',group:'Laboratory analysis',when:I=>I.tests.some(t=>['SV30 and SVI','Oxygen uptake rate','Microscopy'].includes(t)),qty:I=>I.rounds*I.reactors*2,rateFrom:'lab',hint:'MLSS and MLVSS on each reactor sample, each round'},
+   {key:'sv30',item:'1 L graduated cylinders for SV30 settling tests',unit:'pcs',group:'Materials and consumables',when:tHas('SV30 and SVI'),qty:I=>I.reactors+1},
+   {key:'micro',item:'Microscopic examination of activated sludge (floc, filaments, protozoa)',unit:'samples',group:'Laboratory analysis',when:tHas('Microscopy'),qty:I=>Math.max(2,Math.ceil(I.rounds/2))*I.reactors},
+   {key:'our_meter',item:'DO meter with self-stirring BOD probe (hire) for oxygen uptake tests',unit:'days',group:'Equipment hire',when:tHas('Oxygen uptake rate'),qty:I=>I.rounds},
+   {key:'our_cons',item:'BOD bottles (300 mL) and stirrer bars',unit:'sets',group:'Materials and consumables',when:tHas('Oxygen uptake rate'),qty:()=>1},
+   {key:'daf_lab',item:'DAF paired inlet and outlet analyses (TSS, FOG, COD)',unit:'analyses',group:'Laboratory analysis',when:tHas('DAF performance test'),qty:I=>I.rounds*2*3,rateFrom:'lab'},
+   {key:'daf_float',item:'DAF float dry solids analysis',unit:'analyses',group:'Laboratory analysis',when:tHas('DAF performance test'),qty:I=>Math.max(2,Math.ceil(I.rounds/2)),rateFrom:'lab'},
+   {key:'clar_sampler',item:'Sludge blanket core sampler (hire)',unit:'days',group:'Equipment hire',when:tHas('Clarifier assessment'),qty:I=>Math.max(1,Math.ceil(I.rounds/2))},
+   {key:'clar_lab',item:'Clarifier effluent TSS and return sludge solids',unit:'analyses',group:'Laboratory analysis',when:tHas('Clarifier assessment'),qty:I=>I.rounds*2,rateFrom:'lab'},
+   {key:'cons',item:'Sample containers, filter papers, gloves and ice',unit:'lot',group:'Materials and consumables',when:I=>I.tests.length>0,qty:()=>1},
+   {key:'tech',item:'Technician time for process tests',unit:'person-days',group:'Staff time',when:I=>I.tests.length>0,qty:I=>Math.ceil(I.rounds*Math.max(1,I.tests.length)/4),rateFrom:'tech_rate'},
+   {key:'eng',item:'Process engineer: interpretation of process tests',unit:'days',group:'Staff time',when:I=>I.tests.length>0,qty:I=>Math.max(1,Math.ceil(I.tests.length/2)),rateFrom:'eng_rate'}]},
+ jar:{task:'jartests',section:'Jar tests',
+  inputs:a=>{const chems=Array.isArray(a.chems)?a.chems:[];const params=Array.isArray(a.params)?a.params:['COD','TSS','FOG','Turbidity'];
+    const rounds=num(a.rounds)??2,series=num(a.series)??2,best=num(a.best)??2;return {chems,params,rounds,series,best,runs:chems.length*series*rounds}},
+  rows:I=>[
+   ...I.chems.map(c=>{const u=(JAR_CHEMS.find(x=>x[0]===c)||[c,'kg'])[1];return {key:'chem:'+c,item:`${c}: product for testing`,unit:u,group:'Chemicals and reagents',when:()=>true,qty:()=>2,hint:'Suppliers often provide samples free; enter 0 if so.'}}),
+   {key:'ph_reag',item:'pH adjustment reagents for test jars (laboratory-grade acid and caustic)',unit:'lot',group:'Chemicals and reagents',when:I=>I.chems.length>0,qty:()=>1},
+   {key:'app',item:'Jar test apparatus, 6-paddle stirrer (hire)',unit:'days',group:'Equipment hire',when:I=>I.chems.length>0,qty:I=>I.rounds},
+   {key:'turb',item:'Portable turbidity meter (hire)',unit:'days',group:'Equipment hire',when:I=>I.chems.length>0,qty:I=>I.rounds},
+   {key:'beakers',item:'1 L glass beakers (set of 6)',unit:'sets',group:'Materials and consumables',when:I=>I.chems.length>0,qty:()=>1},
+   {key:'glass',item:'Volumetric flasks, pipettes and syringes for stock solutions',unit:'lot',group:'Materials and consumables',when:I=>I.chems.length>0,qty:()=>1},
+   {key:'buffers',item:'pH meter calibration buffers',unit:'sets',group:'Materials and consumables',when:I=>I.chems.length>0,qty:()=>1},
+   {key:'bulk',item:'25 L containers for bulk wastewater samples',unit:'pcs',group:'Materials and consumables',when:I=>I.chems.length>0,qty:I=>I.rounds*2},
+   {key:'lab_raw',item:'Baseline analysis of untreated wastewater',unit:'analyses',group:'Laboratory analysis',when:I=>I.chems.length>0,qty:I=>I.rounds*I.params.length,rateFrom:'lab'},
+   {key:'lab_best',item:'Analysis of supernatant from the best jars',unit:'analyses',group:'Laboratory analysis',when:I=>I.chems.length>0,qty:I=>I.runs*I.best*I.params.length,rateFrom:'lab',hint:'Runs × best jars per run × parameters'},
+   {key:'sludge',item:'Settled sludge volume and dry solids from the best jars',unit:'analyses',group:'Laboratory analysis',when:I=>I.chems.length>0,qty:I=>I.runs,rateFrom:'lab'},
+   {key:'waste',item:'Disposal of test residues and chemical waste',unit:'lot',group:'Materials and consumables',when:I=>I.chems.length>0,qty:()=>1},
+   {key:'tech',item:'Technician time for jar tests',unit:'person-days',group:'Staff time',when:I=>I.chems.length>0,qty:I=>I.rounds,rateFrom:'tech_rate'},
+   {key:'eng',item:'Process engineer: test design, supervision and interpretation',unit:'days',group:'Staff time',when:I=>I.chems.length>0,qty:I=>I.rounds+1,rateFrom:'eng_rate'}]}
+};
+/* All lines for a set: template rows (with suggested quantity, any override, and rate falling back to the rates task) plus custom rows. */
+function lineRows(setKey,a){
+  const L=LINESETS[setKey];a=a||ta('proposal',L.task);const I=L.inputs(a);const R=ta('proposal','rates');const ov=a.lines||{};
+  const out=L.rows(I).filter(r=>r.when(I)).map(r=>{const o=ov[r.key]||{};const sug=r.qty(I);const qty=num(o.qty)??sug;const fb=r.rateFrom?num(R[r.rateFrom]):null;const rate=num(o.rate)??fb;
+    return {key:r.key,item:r.item,unit:r.unit,group:r.group,hint:r.hint,sug,qty,rate,rateFb:fb,qtyOv:has(o.qty),rateOv:has(o.rate),off:!!o.off,amount:(qty||0)*(rate||0)}});
+  (Array.isArray(a.custom)?a.custom:[]).forEach(c=>{const qty=num(c.qty),rate=num(c.rate);out.push({key:'c:'+c.id,id:c.id,custom:true,item:c.item||'',unit:c.unit||'',group:c.group||'Other',qty,rate,off:!!c.off,amount:(qty||0)*(rate||0)})});
+  return out;
+}
+function linesOn(setKey,a){return lineRows(setKey,a).filter(r=>!r.off&&r.qty>0)}
+function linesTotal(setKey,a){return linesOn(setKey,a).reduce((x,r)=>x+r.amount,0)}
+function linesHTML(setKey,a){
+  const rows=lineRows(setKey,a);const ro=readOnly()?'disabled':'';
+  if(!rows.length)return `<p class="muted" style="margin:0">Choose the ${setKey==='jar'?'chemicals to test':'tests'} above and the line items appear here.</p>`;
+  const on=rows.filter(r=>!r.off&&r.qty>0);const by={};on.forEach(r=>{by[r.group]=(by[r.group]||0)+r.amount});
+  const unpriced=on.filter(r=>!(r.rate>0)).length;
+  return `<div class="tablewrap"><table class="tbl lines"><thead><tr><th style="width:44px">Use</th><th>Item</th><th style="width:96px">Qty</th><th style="width:90px">Unit</th><th style="width:116px">Rate (GHS)</th><th style="width:110px;text-align:right">Amount</th></tr></thead><tbody>
+   ${rows.map(r=>`<tr class="${r.off?'off':''}"><td><input type="checkbox" data-lineon="${esc(r.key)}" data-set="${setKey}" ${r.off?'':'checked'} ${ro} aria-label="Include ${esc(r.item)}"></td>
+    <td>${r.custom?`<input class="inp" id="lc-${setKey}-${esc(r.id)}-item" data-cl="${esc(r.id)}" data-cf="item" data-set="${setKey}" value="${esc(r.item)}" placeholder="Item" ${ro}><select class="inp" style="margin-top:4px" id="lc-${setKey}-${esc(r.id)}-group" data-cl="${esc(r.id)}" data-cf="group" data-set="${setKey}" ${ro}>${LINE_GROUPS.map(g=>`<option ${g===r.group?'selected':''}>${g}</option>`).join('')}</select>`:`${esc(r.item)}<div class="hint">${esc(r.group)}${r.hint?' · '+esc(r.hint):''}</div>`}</td>
+    <td>${r.custom?`<input class="inp" id="lc-${setKey}-${esc(r.id)}-qty" inputmode="decimal" data-cl="${esc(r.id)}" data-cf="qty" data-set="${setKey}" value="${esc(r.qty??'')}" ${ro}>`:`<input class="inp" id="ln-${setKey}-${esc(r.key)}-qty" inputmode="decimal" data-line="${esc(r.key)}" data-lf="qty" data-set="${setKey}" value="${r.qtyOv?esc(r.qty):''}" placeholder="${esc(r.sug)}" title="Suggested: ${esc(r.sug)}" ${ro}>`}</td>
+    <td>${r.custom?`<input class="inp" id="lc-${setKey}-${esc(r.id)}-unit" data-cl="${esc(r.id)}" data-cf="unit" data-set="${setKey}" value="${esc(r.unit)}" placeholder="unit" ${ro}>`:esc(r.unit)}</td>
+    <td>${r.custom?`<input class="inp" id="lc-${setKey}-${esc(r.id)}-rate" inputmode="decimal" data-cl="${esc(r.id)}" data-cf="rate" data-set="${setKey}" value="${esc(r.rate??'')}" ${ro}>`:`<input class="inp" id="ln-${setKey}-${esc(r.key)}-rate" inputmode="decimal" data-line="${esc(r.key)}" data-lf="rate" data-set="${setKey}" value="${r.rateOv?esc(r.rate):''}" placeholder="${r.rateFb!==null&&r.rateFb!==undefined?esc(r.rateFb):''}" title="${r.rateFb?'Uses the rate from the rates task unless you enter one':''}" ${ro}>`}</td>
+    <td class="mono" style="text-align:right">${r.off?'–':money(r.amount)}${r.custom&&!ro?`<br><button class="btn ghost small" type="button" data-rmline="${esc(r.id)}" data-set="${setKey}">Remove</button>`:''}</td></tr>`).join('')}
+   </tbody></table></div>
+   <div class="row" style="justify-content:space-between;margin-top:10px"><button class="btn" type="button" data-act="add-line" data-set="${setKey}" ${ro}>Add a line</button>${unpriced?`<span class="pill warn">${unpriced} line${unpriced>1?'s have':' has'} no rate</span>`:''}</div>
+   ${calcRow([...Object.entries(by).map(([g,v])=>[money(v),g]),[money(on.reduce((x,r)=>x+r.amount,0)),'Total, direct cost']])}`;
+}
+function setLines(setKey,mut){
+  const t=curTask();if(!t||readOnly())return;const a=t.answers||{};
+  const res=mut({lines:JSON.parse(JSON.stringify(a.lines||{})),custom:JSON.parse(JSON.stringify(a.custom||[]))});
+  if(res.lines)saveTaskAnswer('lines',res.lines);if(res.custom)saveTaskAnswer('custom',res.custom);
+  refreshLines(setKey);
+}
+function refreshLines(setKey){
+  const el=document.querySelector(`[data-lines="${setKey}"]`);const t=curTask();if(!el||!t)return;
+  const act=document.activeElement;const aid=act&&act.id;const pos=act&&act.selectionStart;
+  el.innerHTML=linesHTML(setKey,t.answers||{});
+  if(aid){const n=document.getElementById(aid);if(n){n.focus();try{n.setSelectionRange(pos,pos)}catch(_){}}}
+}
 
 const TASKSPEC={
  pre:[
@@ -635,7 +720,21 @@ const TASKSPEC={
    {id:'metering',label:'Flow metering',type:'chips',req:true,options:['Existing meters','Hire portable meters','Timed bucket / estimate']},
    {id:'meters',label:'Flow meters to hire',type:'number',unit:'meters'},
    {id:'calc',label:'Sampling totals',type:'calc',fn:a=>{const s=scopeNumbers(a);return calcRow([[s.samples,'Samples in total'],[s.analyses,'Laboratory analyses'],[s.micro?s.samples*s.micro:0,'Of which microbiology']])}}]},
-  {key:'rates',title:'Enter rates and build the audit cost estimate',intro:'Rates are your own. The button turns the scope and rates into cost lines on the Costing tab; run it again after any change.',qs:[
+  {key:'proctests',ord:1.5,title:'Cost the process tests',intro:'Each process test is costed line by line: laboratory analyses, equipment hire, consumables and staff time. Suggested quantities show in grey; type over any of them. Staff and laboratory rates come from the rates task unless you enter your own here.',qs:[
+   {id:'tests',label:'Process tests to include',type:'multi',req:true,options:PROC_TESTS},
+   {id:'rounds',label:'Test rounds',type:'number',unit:'rounds',req:true,ph:'e.g. 5',hint:'Usually one round per monitoring day.'},
+   {id:'reactors',label:'Aeration tanks or reactors sampled',type:'number',unit:'reactors',req:true,ph:'e.g. 1'},
+   {id:'lines',label:'Line items',type:'lines',set:'proc'},
+   {id:'ok',label:'Quantities and rates checked',type:'chips',options:DONE,req:true}]},
+  {key:'jartests',ord:1.6,title:'Cost the jar tests',intro:'Jar tests find the right coagulant, flocculant and dose. Cost every chemical to be trialled, the apparatus, the laboratory analyses and staff time.',qs:[
+   {id:'chems',label:'Chemicals to trial',type:'multi',req:true,options:JAR_CHEMS.map(c=>c[0])},
+   {id:'rounds',label:'Test sessions (separate days or sample batches)',type:'number',unit:'sessions',req:true,ph:'e.g. 2'},
+   {id:'series',label:'Dose series per chemical per session',type:'number',unit:'series',ph:'2',hint:'A series is one run of 6 jars at different doses. Two series (a coarse range, then a fine range) is typical.'},
+   {id:'best',label:'Best jars sent to the laboratory per series',type:'number',unit:'jars',ph:'2'},
+   {id:'params',label:'Parameters analysed on the jar supernatant',type:'multi',options:['COD','TSS','FOG','Turbidity','pH','Colour','Total phosphorus','Conductivity / TDS'],hint:'If none are ticked: COD, TSS, FOG and turbidity.'},
+   {id:'lines',label:'Line items',type:'lines',set:'jar'},
+   {id:'ok',label:'Quantities and rates checked',type:'chips',options:DONE,req:true}]},
+  {key:'rates',title:'Enter rates and build the audit cost estimate',intro:'Rates are your own. The button turns the scope, the process tests, the jar tests and these rates into cost lines on the Costing tab; run it again after any change.',qs:[
    {id:'lab',label:'Average laboratory rate',type:'number',unit:'GHS per analysis',req:true},
    {id:'micro',label:'Microbiology rate (if different)',type:'number',unit:'GHS per analysis'},
    {id:'eng_rate',label:'Engineer day rate',type:'number',unit:'GHS/day',req:true},
@@ -649,12 +748,11 @@ const TASKSPEC={
    {id:'meter_rate',label:'Flow meter hire',type:'number',unit:'GHS per meter per day'},
    {id:'transport',label:'Transport',type:'number',unit:'GHS/day'},
    {id:'consumables',label:'Consumables, bottles, ice and PPE',type:'number',unit:'GHS lump sum'},
-   {id:'tests_cost',label:'Process and jar tests',type:'number',unit:'GHS lump sum'},
    {id:'contingency',label:'Contingency',type:'number',unit:'%'},
    {id:'overhead',label:'Overhead and profit',type:'number',unit:'%'},
    {id:'tax',label:'VAT and levies',type:'number',unit:'%'},
    {id:'go',label:'Cost lines',type:'action',act:'build-costs',btn:'Create audit cost lines'},
-   {id:'calc',label:'Audit estimate',type:'calc',fn:()=>{const lines=auditCostLines();const sub=lines.reduce((x,l)=>x+l.qty*l.rate,0);const r=ta('proposal','rates');const c=sub*n0(r.contingency)/100,o=(sub+c)*n0(r.overhead)/100,t=(sub+c+o)*n0(r.tax)/100;return calcRow([[money(sub),'Direct costs'],[money(c+o),'Contingency, overhead and profit'],[money(t),'VAT and levies'],[money(sub+c+o+t),'Audit price']])}}]},
+   {id:'calc',label:'Audit estimate',type:'calc',fn:()=>{const lines=auditCostLines();const sub=lines.reduce((x,l)=>x+l.qty*l.rate,0)+linesTotal('proc')+linesTotal('jar');const r=ta('proposal','rates');const c=sub*n0(r.contingency)/100,o=(sub+c)*n0(r.overhead)/100,t=(sub+c+o)*n0(r.tax)/100;return calcRow([[money(sub),'Direct costs'],[money(c+o),'Contingency, overhead and profit'],[money(t),'VAT and levies'],[money(sub+c+o+t),'Audit price']])}}]},
   {key:'later',title:'Estimate the full programme (remediation and monitoring)',intro:'Indicative figures so the client sees the whole journey, not just the audit.',qs:[
    {id:'rem_scope',label:'Likely remediation',type:'chips',options:['Operational fixes only','Minor upgrades','Major upgrade','New treatment plant'],req:true},
    {id:'capex_low',label:'Remediation capital cost, low',type:'number',unit:'GHS',req:true},
@@ -676,7 +774,8 @@ const TASKSPEC={
    {id:'validity',label:'Proposal valid for',type:'number',unit:'days',req:true},
    {id:'client_resp',label:'Client responsibilities',type:'multi',options:['Site access and escort','Safe access to sampling points','Power for samplers and meters','Historical data and drawings','Operator availability for interviews','Secure storage for equipment']},
    {id:'assumptions',label:'Assumptions',type:'textarea',hint:'e.g. normal production during monitoring; results from an accredited laboratory.'},
-   {id:'exclusions',label:'Exclusions',type:'textarea',hint:'e.g. detailed design, civil works, permit applications.'}]},
+   {id:'exclusions',label:'Exclusions',type:'textarea',hint:'e.g. detailed design, civil works, permit applications.'},
+   {id:'fee_view',label:'How fees appear in the proposal',type:'chips',options:['Itemised (every line)','Summarised by group'],hint:'Itemised lists every line. Summarised groups lines into staff, laboratory, equipment, chemicals, consumables and transport. Process tests and jar tests get their own table either way.'}]},
   {key:'doc',title:'Generate the proposal and review it internally',intro:'Builds a Word proposal from the pre-audit findings, scope, programme and costs. Edit it in Word before sending.',qs:[
    {id:'ref',label:'Proposal reference',type:'text',req:true,ph:'e.g. CE-WS-2026-014'},
    {id:'author',label:'Prepared by',type:'text',req:true},
@@ -1160,7 +1259,7 @@ async function loadTemplate(ph){
   if(readOnly()||S.loadingTpl)return;
   const rows=S.regs.tasks.filter(t=>t.phase===ph);const now=Date.now();
   const items=TASKSPEC[ph].map((t,i)=>({t,i})).filter(({t})=>!rows.some(r=>r.title===t.title||(t.key&&r.key===t.key)))
-    .map(({t,i})=>({path:`audits/${S.auditId}/tasks/tsk-${ph}-${t.key||i}-${now.toString(36)}`,data:{title:t.title,key:t.key||null,phase:ph,status:'To do',order:i,answers:{},createdAt:now,updatedAt:now,by:S.uid||null}}));
+    .map(({t,i})=>({path:`audits/${S.auditId}/tasks/tsk-${ph}-${t.key||i}-${now.toString(36)}`,data:{title:t.title,key:t.key||null,phase:ph,status:'To do',order:t.ord??i,answers:{},createdAt:now,updatedAt:now,by:S.uid||null}}));
   if(!items.length){toast('The standard checklist is already loaded.');return}
   S.loadingTpl=true;render();
   try{
@@ -1187,6 +1286,7 @@ function tqHTML(q,a){
   const req=q.req?'<span class="req">Required</span>':'';
   if(q.type==='calc')return `<div class="q tcalc"><span class="ql">${esc(q.label)}</span><div data-calc="${q.id}">${q.fn(a)}</div></div>`;
   if(q.type==='link')return `<div class="q"><span class="ql">${esc(q.label)}</span><div class="linkbox"><span data-linktext="${q.id}">${esc(q.text())}</span><button class="btn" type="button" data-view-go="${q.view}">${esc(q.btn||'Open')}</button></div></div>`;
+  if(q.type==='lines')return `<div class="q"><span class="ql">${esc(q.label)}</span><div data-lines="${q.set}">${linesHTML(q.set,a)}</div></div>`;
   if(q.type==='action')return `<div class="q"><span class="ql">${esc(q.label)}</span><div class="row"><button class="btn primary" type="button" data-act="${q.act}" ${readOnly()&&q.act!=='export-xlsx'&&q.act!=='gen-proposal'?'disabled':''}>${esc(q.btn)}</button></div></div>`;
   return `<div class="q ${q.req&&!answeredQ(q,a[q.id])?'missing':''}" data-qwrap="${q.id}"><label class="ql" for="t-${q.id}">${esc(q.label)} ${req}</label>${q.hint?`<span class="hint">${esc(q.hint)}</span>`:''}${qInput(q,a[q.id],'t')}</div>`;
 }
@@ -1235,6 +1335,7 @@ function patchTaskForm(){
   if(sp)sp.qs.forEach(q=>{
     if(q.type==='calc'){const el=document.querySelector(`[data-calc="${q.id}"]`);if(el)el.innerHTML=q.fn(a);return}
     if(q.type==='link'){const el=document.querySelector(`[data-linktext="${q.id}"]`);if(el)el.textContent=q.text();return}
+    if(q.type==='lines'){const el=document.querySelector(`[data-lines="${q.set}"]`);if(el&&!el.contains(document.activeElement))el.innerHTML=linesHTML(q.set,a);return}
     const el=document.querySelector(`#tqs [data-q="${q.id}"]`);
     const w=document.querySelector(`[data-qwrap="${q.id}"]`);if(w)w.classList.toggle('missing',!!q.req&&!answeredQ(q,a[q.id]));
     if(!el||el.contains(document.activeElement)||S.timers['t:'+q.id])return;
@@ -1263,18 +1364,27 @@ function commitTaskInput(el){
   const v=el.value.trim();if(String((t.answers||{})[q.id]??'')===v)return;saveTaskAnswer(q.id,v);
 }
 async function buildCosts(){
-  if(readOnly())return;const lines=auditCostLines();
-  if(!lines.length){toast('Fill in the scope and rates first.');return}
-  for(const x of S.regs.costing.filter(c=>c.auto==='audit'))await write({op:'delete',path:`audits/${S.auditId}/costing/${x.id}`});
+  if(readOnly())return;
+  const main=auditCostLines().map(l=>({...l,section:'Field and laboratory programme'}));
+  const extra=[['proc','Process tests'],['jar','Jar tests']].flatMap(([k,sec])=>linesOn(k).filter(r=>r.rate>0).map(r=>({item:r.item,category:r.group,qty:r.qty,unit:r.unit,rate:r.rate,section:sec})));
+  const unpriced=['proc','jar'].reduce((x,k)=>x+linesOn(k).filter(r=>!(r.rate>0)).length,0);
+  const lines=[...main,...extra];
+  if(!lines.length){toast('Fill in the scope, tests and rates first.');return}
+  const old=S.regs.costing.filter(c=>c.auto==='audit');for(const x of old)await write({op:'delete',path:`audits/${S.auditId}/costing/${x.id}`});
   const now=Date.now();
-  for(const [i,l] of lines.entries())await write({op:'set',path:`audits/${S.auditId}/costing/cost-aud-${now.toString(36)}-${i}`,data:{...l,phase:'Full audit',auto:'audit',order:i,createdAt:now,updatedAt:now,by:S.uid||null}});
-  toast(`${lines.length} cost lines created on the Costing tab.`);
+  const items=lines.map((l,i)=>({path:`audits/${S.auditId}/costing/cost-aud-${now.toString(36)}-${i}`,data:{...l,phase:'Full audit',auto:'audit',order:i,createdAt:now,updatedAt:now,by:S.uid||null}}));
+  if(S.db.setMany)await S.db.setMany(items);else for(const it of items)await write({op:'set',path:it.path,data:it.data});
+  toast(`${lines.length} cost lines created on the Costing tab.${unpriced?` ${unpriced} test line${unpriced>1?'s were':' was'} left out because ${unpriced>1?'they have':'it has'} no rate.`:''}`);
+}
+function sectionBreakdown(){
+  const by={};S.regs.costing.filter(c=>(c.phase||'Full audit')==='Full audit').forEach(c=>{const a=costAmount(c);if(a===null)return;const k=c.section||'Field and laboratory programme';by[k]=(by[k]||0)+a});
+  const e=Object.entries(by);return e.length>1?`<br><span class="muted" style="font-size:13px">${e.map(([k,v])=>`${esc(k)} ${money(v)}`).join(' · ')}</span>`:'';
 }
 function costTotals(){
   const cs=costSummary();const p=programmeRange();const ro=readOnly();
   const rows=Object.entries(cs.phases);
   return `<div class="grid2" style="margin-bottom:16px">
-   <section class="card"><div class="cardtitle">Totals by phase</div>${rows.length?`<table class="tbl" style="min-width:0"><tbody>${rows.map(([k,v])=>`<tr><td><b>${esc(k)}</b>${v.cont||v.oh||v.tax?`<br><span class="muted" style="font-size:13px">Direct ${money(v.sub)} · contingency ${money(v.cont)} · overhead ${money(v.oh)} · tax ${money(v.tax)}</span>`:''}</td><td class="mono" style="text-align:right">${money(v.total)}</td></tr>`).join('')}<tr><td><b>Total</b></td><td class="mono" style="text-align:right"><b>${money(cs.grand)}</b></td></tr></tbody></table>`:'<p class="muted" style="margin:0">No cost lines yet.</p>'}
+   <section class="card"><div class="cardtitle">Totals by phase</div>${rows.length?`<table class="tbl" style="min-width:0"><tbody>${rows.map(([k,v])=>`<tr><td><b>${esc(k)}</b>${v.cont||v.oh||v.tax?`<br><span class="muted" style="font-size:13px">Direct ${money(v.sub)} · contingency ${money(v.cont)} · overhead ${money(v.oh)} · tax ${money(v.tax)}</span>`:''}${k==='Full audit'?sectionBreakdown():''}</td><td class="mono" style="text-align:right">${money(v.total)}</td></tr>`).join('')}<tr><td><b>Total</b></td><td class="mono" style="text-align:right"><b>${money(cs.grand)}</b></td></tr></tbody></table>`:'<p class="muted" style="margin:0">No cost lines yet.</p>'}
     <div class="row" style="margin-top:12px"><button class="btn" type="button" data-act="build-costs" ${ro?'disabled':''}>Create audit cost lines from scope</button>${S.downloads?'<button class="btn primary" type="button" data-act="gen-proposal">Generate proposal (.docx)</button>':''}</div></section>
    <section class="card"><div class="cardtitle">Whole programme estimate</div>
     ${calcRow([[money(p.audit),'Audit'],[p.remHi?`${money(p.remLo)} – ${money(p.remHi)}`:'–','Remediation incl. design'],[money(p.mon),'Monitoring'],[p.hi?`${money(p.lo)} – ${money(p.hi)}`:'–','Whole programme']])}
@@ -1509,7 +1619,7 @@ function summary(k,r){
   if(k==='samples'){t=r.code||'Code pending';m=[esc(r.point||''),esc(r.point_detail||''),esc(r.stype||''),esc([r.collected_date,r.time].filter(Boolean).join(' '))].filter(Boolean).join(' · ');
     const st=r.status||'Planned';pills.push(`<span class="pill ${{Planned:'',Collected:'info','Sent to lab':'warn','Results received':'good'}[st]}">${esc(st)}</span>`);
     if((r.params||[]).length)pills.push(`<span class="pill">${esc(r.params.join(', '))}</span>`)}
-  if(k==='costing'){t=r.item||'Cost line';m=[esc(r.phase||''),esc(r.category||'')].filter(Boolean).join(' · ');
+  if(k==='costing'){t=r.item||'Cost line';m=[esc(r.phase||''),esc(r.section||''),esc(r.category||'')].filter(Boolean).join(' · ');
     if(num(r.qty)!==null)pills.push(`<span class="pill mono">${esc(r.qty)} ${esc(r.unit||'')}${num(r.rate)!==null?' × GHS '+esc(r.rate):''}</span>`);
     const a=costAmount(r);if(a!==null)pills.push(`<span class="pill info mono">GHS ${Math.round(a).toLocaleString('en-GB')}</span>`)}
   if(k==='results'){const sm=sampleByCode(r.sample);t=r.sample||'No sample code';m=[esc(sm?sm.point:''),esc(r.lab||''),esc(r.received?fmtDate(r.received):'')].filter(Boolean).join(' · ');
@@ -1659,6 +1769,7 @@ document.addEventListener('click',async e=>{
   const pg=t.closest('[data-phase-go]');if(pg){const P=phaseOf(pg.dataset.phaseGo);S.phase=P.id;go(P.views[0][0]);return}
   const sp=t.closest('[data-set-phase]');if(sp){saveAudit('phase',sp.dataset.setPhase);render();return}
   const ed=t.closest('[data-edit]');if(ed){openSheet(ed.dataset.k||S.view,ed.dataset.edit);return}
+  const rml=t.closest('[data-rmline]');if(rml){const id=rml.dataset.rmline;setLines(rml.dataset.set,d=>({custom:d.custom.filter(x=>x.id!==id)}));return}
   const brm=t.closest('[data-brandrm]');if(brm){saveBranding({[brm.dataset.brandrm]:null}).then(render);return}
   const trm=t.closest('[data-trmphoto]');if(trm){removeTaskPhoto(trm.dataset.trmphoto);return}
   const rm=t.closest('[data-rmphoto]');if(rm&&S.sheet){const f=rm.dataset.field;S.sheet.data[f]=(S.sheet.data[f]||[]).filter(x=>x!==rm.dataset.rmphoto);S.sheet.dirty=true;renderSheetPhotos();return}
@@ -1692,6 +1803,7 @@ document.addEventListener('click',async e=>{
   if(a==='del-project-no'){S.confirmDel=false;render()}
   if(a==='del-project-yes')deleteProject();
   if(a==='build-costs')buildCosts();
+  if(a==='add-line'){setLines(act.dataset.set,d=>{d.custom.push({id:Date.now().toString(36),item:'',unit:'',group:'Other',qty:'',rate:''});return {custom:d.custom}})}
   if(a==='gen-proposal')genProposal();
   if(a==='gen-report')genReport();
   if(a==='rm-clientlogo'&&S.audit&&!readOnly()){S.audit.client_logo=null;write({op:'update',path:'audits/'+S.auditId,data:{client_logo:null}});render()}
@@ -1727,6 +1839,9 @@ document.addEventListener('change',e=>{
   if(S.sheet&&S.sheet.k==='samples'&&!S.sheet.id&&['point','collected_date'].includes(t.dataset.q)){collectSheet();S.sheet.data.code=nextCode(S.sheet.data.point,S.sheet.data.collected_date);const cv=$('#codeVal');if(cv)cv.textContent=S.sheet.data.code}
   if(t.dataset.audit){saveAudit(t.dataset.audit,t.value);return}
   if(t.dataset.limit){saveLimit(t.dataset.limit,t.dataset.lk,t.value);return}
+  if(t.dataset.line){const k=t.dataset.line,f=t.dataset.lf,v=t.value.trim();setLines(t.dataset.set,d=>{d.lines[k]={...(d.lines[k]||{}),[f]:v};return {lines:d.lines}});return}
+  if(t.dataset.lineon){const k=t.dataset.lineon,off=!t.checked;setLines(t.dataset.set,d=>{if(k.startsWith('c:')){const c=d.custom.find(x=>'c:'+x.id===k);if(c)c.off=off;return {custom:d.custom}}d.lines[k]={...(d.lines[k]||{}),off};return {lines:d.lines}});return}
+  if(t.dataset.cl){const id=t.dataset.cl,f=t.dataset.cf,v=t.value.trim();setLines(t.dataset.set,d=>{const c=d.custom.find(x=>x.id===id);if(c)c[f]=v;return {custom:d.custom}});return}
   if(t.dataset.tf){saveTaskField(t.dataset.tf,t.value.trim());return}
   if(t.dataset.q&&t.closest('#tqs')){clearTimeout(S.timers['t:'+t.dataset.q]);delete S.timers['t:'+t.dataset.q];commitTaskInput(t);return}
   if(S.sheet&&t.closest('#sheetBody')&&t.dataset.q){const fd=REGS[S.sheet.k].fields.find(x=>x.id===t.dataset.q);if(fd&&fd.rerender){collectSheet();renderSheet();return}}

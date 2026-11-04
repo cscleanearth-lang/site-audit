@@ -14,7 +14,7 @@ Each client project runs through five phases, each with a standard checklist the
 
 Every checklist task opens its own questionnaire. Questions marked **Required** must be answered before the task can be ticked off, and calculated values (sample totals, cost estimate, SVI, F/M, DAF removal, water balance, compliance rate) update as you type.
 
-In the Proposal phase, the scope and rates tasks build the audit cost lines automatically, the programme task estimates remediation and monitoring, and **Generate proposal (.docx)** produces a formal Word proposal from the pre-audit findings, scope, methodology, programme, fees and whole-programme estimate.
+In the Proposal phase, the scope, process-test, jar-test and rates tasks build the audit cost lines automatically (process and jar tests are costed line by line: chemicals, analyses such as MLSS/MLVSS and supernatant tests, equipment hire, consumables and staff time), the programme task estimates remediation and monitoring, and **Generate proposal (.docx)** produces a formal Word proposal from the pre-audit findings, scope, methodology, programme, fees and whole-programme estimate.
 
 The Overview shows the current phase, checklist progress and every finding, including limit exceedances and measured overloads.
 
